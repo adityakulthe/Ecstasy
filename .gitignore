@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+.cache
+nosetests.xml
+coverage.xml
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+/tmp/
+*.ll
+*.bc
+*.o
+*.out
+
+# Environment variables
+.env
+.env.local
+
+# MCP Server
+server/__pycache__/
+agents/__pycache__/
+
+# Streamlit
+.streamlit/
+
+# Alive2 build artifacts
+alive2/
+*.alive2
+
+# Compiled binaries
+*.exe
+a.out
+output
+*_bin
+orig_bin
+opt_bin
+
+# Test outputs
+test-results/
+test-reports/
+
+# Made with Bob
+.env
