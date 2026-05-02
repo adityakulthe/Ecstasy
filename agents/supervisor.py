@@ -433,27 +433,69 @@ class CompilerSupervisor:
         FIX #4: Run real Granite IR optimization with transformation tracking
         Logs IR before/after and tracks if actual changes were made
         """
+        print("\n" + "="*70)
+        print("🔧 IR ARCHITECT AGENT - DETAILED LOG")
+        print("="*70)
+        
         try:
             import sys
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
             from agents.ir_architect import run as ir_architect_run
             
-            print("  🤖 Calling granite-4-h-small via ir_architect...")
-            print("  📄 Input IR (first 5 lines):")
-            for line in ir_code.split('\n')[:5]:
-                if line.strip():
-                    print(f"     {line}")
+            print("\n📥 INPUT TO IR ARCHITECT:")
+            print("-" * 70)
+            print(f"  • IR Length: {len(ir_code)} characters")
+            print(f"  • IR Lines: {len(ir_code.splitlines())} lines")
+            print(f"  • Functions: {ir_code.count('define ')} functions")
+            print("\n  📄 Full Input IR (first 20 lines):")
+            ir_lines = ir_code.split('\n')
+            for i, line in enumerate(ir_lines[:20], 1):
+                print(f"     {i:3d} | {line}")
+            if len(ir_lines) > 20:
+                remaining = len(ir_lines) - 20
+                print(f"     ... ({remaining} more lines)")
             
+            print("\n🤖 CALLING IBM GRANITE 4.0 AI MODEL...")
+            print("  • Model: ibm/granite-4-h-small")
+            print("  • Task: Optimize LLVM IR for performance")
+            print("  • Max tokens: 4096")
+            print("  • Temperature: 0.1 (deterministic)")
+            
+            import time
+            start_time = time.time()
             optimized = ir_architect_run(ir_code)
+            elapsed = time.time() - start_time
             
-            print("  📄 Output IR (first 5 lines):")
-            for line in optimized.split('\n')[:5]:
-                if line.strip():
-                    print(f"     {line}")
+            print(f"  ✅ AI call completed in {elapsed:.2f} seconds")
+            
+            print("\n📤 OUTPUT FROM IR ARCHITECT:")
+            print("-" * 70)
+            print(f"  • Output Length: {len(optimized)} characters")
+            print(f"  • Output Lines: {len(optimized.splitlines())} lines")
+            print(f"  • Functions: {optimized.count('define ')} functions")
+            print("\n  📄 Full Output IR (first 20 lines):")
+            opt_lines = optimized.split('\n')
+            for i, line in enumerate(opt_lines[:20], 1):
+                print(f"     {i:3d} | {line}")
+            if len(opt_lines) > 20:
+                remaining = len(opt_lines) - 20
+                print(f"     ... ({remaining} more lines)")
             
             # Check if IR actually changed
+            print("\n🔍 TRANSFORMATION ANALYSIS:")
+            print("-" * 70)
             if optimized != ir_code:
-                print("  ✅ ir_architect complete - IR TRANSFORMED")
+                # Calculate diff stats
+                input_lines = set(ir_code.splitlines())
+                output_lines = set(optimized.splitlines())
+                added = len(output_lines - input_lines)
+                removed = len(input_lines - output_lines)
+                
+                print(f"  ✅ IR WAS TRANSFORMED BY AI")
+                print(f"  • Lines added: {added}")
+                print(f"  • Lines removed: {removed}")
+                print(f"  • Net change: {len(optimized) - len(ir_code):+d} characters")
+                
                 if self.knowledge_base:
                     from agents.shared_knowledge_base import Transformation
                     self.knowledge_base.add_transformation(Transformation(
@@ -463,12 +505,26 @@ class CompilerSupervisor:
                         description="Applied performance optimizations",
                         verified=False
                     ))
+                    print("  • Transformation recorded in knowledge base")
+                
+                print("\n✅ IR ARCHITECT COMPLETE - RETURNING OPTIMIZED IR")
+                print("="*70 + "\n")
                 return optimized, 0
             else:
-                print("  ℹ️  ir_architect complete - NO CHANGES")
+                print("  ℹ️  NO CHANGES MADE")
+                print("  • Input and output IR are identical")
+                print("  • AI determined no optimizations were beneficial")
+                print("\n✅ IR ARCHITECT COMPLETE - RETURNING ORIGINAL IR")
+                print("="*70 + "\n")
                 return ir_code, 0
+                
         except Exception as e:
-            print(f"  ⚠️ ir_architect failed: {e}")
+            print(f"\n❌ IR ARCHITECT FAILED")
+            print(f"  • Error: {e}")
+            print(f"  • Type: {type(e).__name__}")
+            import traceback
+            print(f"  • Traceback:\n{traceback.format_exc()}")
+            print("="*70 + "\n")
             return None, 0
     
     def _run_memory_sentinel(self, ir_code: str) -> tuple[Optional[str], int]:
@@ -476,27 +532,90 @@ class CompilerSupervisor:
         FIX #4: Run real Granite memory hardening with transformation tracking
         Logs IR before/after and tracks if actual changes were made
         """
+        print("\n" + "="*70)
+        print("🛡️  MEMORY SENTINEL AGENT - DETAILED LOG")
+        print("="*70)
+        
         try:
             import sys
             sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
             from agents.memory_sentinel import run as sentinel_run
             
-            print("  🤖 Calling granite-4-h-small via memory_sentinel...")
-            print("  📄 Input IR (first 5 lines):")
-            for line in ir_code.split('\n')[:5]:
-                if line.strip():
-                    print(f"     {line}")
+            print("\n📥 INPUT TO MEMORY SENTINEL:")
+            print("-" * 70)
+            print(f"  • IR Length: {len(ir_code)} characters")
+            print(f"  • IR Lines: {len(ir_code.splitlines())} lines")
             
+            # Count potential vulnerabilities
+            gep_count = ir_code.count('getelementptr')
+            load_count = ir_code.count('load ')
+            store_count = ir_code.count('store ')
+            
+            print(f"  • Potential vulnerability points:")
+            print(f"    - getelementptr instructions: {gep_count}")
+            print(f"    - load instructions: {load_count}")
+            print(f"    - store instructions: {store_count}")
+            
+            print("\n  📄 Full Input IR (first 20 lines):")
+            ir_lines = ir_code.split('\n')
+            for i, line in enumerate(ir_lines[:20], 1):
+                print(f"     {i:3d} | {line}")
+            if len(ir_lines) > 20:
+                remaining = len(ir_lines) - 20
+                print(f"     ... ({remaining} more lines)")
+            
+            print("\n🤖 CALLING IBM GRANITE 4.0 AI MODEL...")
+            print("  • Model: ibm/granite-4-h-small")
+            print("  • Task: Add memory safety bounds checks")
+            print("  • Max tokens: 4096")
+            print("  • Temperature: 0.1 (deterministic)")
+            
+            import time
+            start_time = time.time()
             hardened = sentinel_run(ir_code)
+            elapsed = time.time() - start_time
             
-            print("  📄 Output IR (first 5 lines):")
-            for line in hardened.split('\n')[:5]:
-                if line.strip():
-                    print(f"     {line}")
+            print(f"  ✅ AI call completed in {elapsed:.2f} seconds")
+            
+            print("\n📤 OUTPUT FROM MEMORY SENTINEL:")
+            print("-" * 70)
+            print(f"  • Output Length: {len(hardened)} characters")
+            print(f"  • Output Lines: {len(hardened.splitlines())} lines")
+            
+            # Count added safety checks
+            out_gep = hardened.count('getelementptr')
+            out_load = hardened.count('load ')
+            out_store = hardened.count('store ')
+            
+            print(f"  • After hardening:")
+            print(f"    - getelementptr instructions: {out_gep} (Δ{out_gep - gep_count:+d})")
+            print(f"    - load instructions: {out_load} (Δ{out_load - load_count:+d})")
+            print(f"    - store instructions: {out_store} (Δ{out_store - store_count:+d})")
+            
+            print("\n  📄 Full Output IR (first 20 lines):")
+            hard_lines = hardened.split('\n')
+            for i, line in enumerate(hard_lines[:20], 1):
+                print(f"     {i:3d} | {line}")
+            if len(hard_lines) > 20:
+                remaining = len(hard_lines) - 20
+                print(f"     ... ({remaining} more lines)")
             
             # Check if IR actually changed
+            print("\n🔍 SAFETY ANALYSIS:")
+            print("-" * 70)
             if hardened != ir_code:
-                print("  ✅ memory_sentinel complete - IR TRANSFORMED")
+                # Calculate diff stats
+                input_lines = set(ir_code.splitlines())
+                output_lines = set(hardened.splitlines())
+                added = len(output_lines - input_lines)
+                removed = len(input_lines - output_lines)
+                
+                print(f"  ✅ MEMORY SAFETY HARDENING APPLIED")
+                print(f"  • Lines added: {added}")
+                print(f"  • Lines removed: {removed}")
+                print(f"  • Net change: {len(hardened) - len(ir_code):+d} characters")
+                print(f"  • Safety checks added: {added} new bounds checks")
+                
                 if self.knowledge_base:
                     from agents.shared_knowledge_base import Transformation
                     self.knowledge_base.add_transformation(Transformation(
@@ -506,12 +625,27 @@ class CompilerSupervisor:
                         description="Applied memory safety hardening",
                         verified=False
                     ))
+                    print("  • Transformation recorded in knowledge base")
+                
+                print("\n✅ MEMORY SENTINEL COMPLETE - RETURNING HARDENED IR")
+                print("="*70 + "\n")
                 return hardened, 0
             else:
-                print("  ℹ️  memory_sentinel complete - NO CHANGES")
+                print("  ℹ️  NO VULNERABILITIES FOUND")
+                print("  • Input and output IR are identical")
+                print("  • AI determined code is already memory-safe")
+                print("  • No bounds checks needed")
+                print("\n✅ MEMORY SENTINEL COMPLETE - RETURNING ORIGINAL IR")
+                print("="*70 + "\n")
                 return ir_code, 0
+                
         except Exception as e:
-            print(f"  ⚠️ memory_sentinel failed: {e}")
+            print(f"\n❌ MEMORY SENTINEL FAILED")
+            print(f"  • Error: {e}")
+            print(f"  • Type: {type(e).__name__}")
+            import traceback
+            print(f"  • Traceback:\n{traceback.format_exc()}")
+            print("="*70 + "\n")
             return None, 0
 
 

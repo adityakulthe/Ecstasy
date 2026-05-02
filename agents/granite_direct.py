@@ -51,7 +51,7 @@ class GraniteDirectAgent:
         self,
         system_prompt: str,
         user_message: str,
-        model_id: str = "ibm/granite-13b-chat-v2",
+        model_id: str = "ibm/granite-4-h-small",
         max_tokens: int = 2000,
         temperature: float = 0.7
     ) -> str:
@@ -61,7 +61,7 @@ class GraniteDirectAgent:
         Args:
             system_prompt: System instructions for the model
             user_message: User's input message
-            model_id: Model identifier (default: granite-13b-chat-v2)
+            model_id: Model identifier (default: granite-4-h-small)
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             
