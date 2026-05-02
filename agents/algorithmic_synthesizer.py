@@ -185,13 +185,41 @@ exit:
         return max_depth
     
     def _detect_bubble_sort(self, ir_code: str) -> bool:
-        """Detect bubble sort pattern (nested loops with swap)"""
-        # Look for nested loops with comparison and swap
-        has_nested_loops = self._detect_nested_loops(ir_code) >= 2
-        has_comparison = 'icmp' in ir_code
-        has_swap = 'store' in ir_code and 'load' in ir_code
+        """
+        FIX #3: Detect bubble sort pattern with improved heuristics
+        Looks for: function name, nested loops, array access, conditional swap
+        """
+        # Check 1: Function name contains "bubble" or "sort"
+        if 'bubble_sort' in ir_code.lower() or '@bubble_sort' in ir_code:
+            return True
         
-        return has_nested_loops and has_comparison and has_swap
+        # Check 2: Analyze IR structure for bubble sort pattern
+        lines = ir_code.split('\n')
+        nested_loop_depth = 0
+        max_depth = 0
+        has_array_access = False
+        has_conditional_swap = False
+        
+        for i, line in enumerate(lines):
+            # Count loop depth (for.cond, for.body labels indicate loops)
+            if 'for.cond' in line or 'for.body' in line or 'while.cond' in line:
+                nested_loop_depth += 1
+                max_depth = max(max_depth, nested_loop_depth)
+            elif 'for.end' in line or 'while.end' in line:
+                nested_loop_depth = max(0, nested_loop_depth - 1)
+            
+            # Check for array element access (getelementptr)
+            if 'getelementptr' in line:
+                has_array_access = True
+            
+            # Check for conditional swap pattern (icmp followed by store/load)
+            if 'icmp' in line and i + 10 < len(lines):
+                next_lines = '\n'.join(lines[i:i+10])
+                if 'store' in next_lines and 'load' in next_lines:
+                    has_conditional_swap = True
+        
+        # Bubble sort requires: nested loops (depth >= 2), array access, conditional swap
+        return max_depth >= 2 and has_array_access and has_conditional_swap
     
     def _detect_linear_search(self, ir_code: str) -> bool:
         """Detect linear search pattern (single loop with comparison)"""

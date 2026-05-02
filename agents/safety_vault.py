@@ -152,11 +152,11 @@ class SafetyVault:
                 for i, log in enumerate(reasoning_logs[:5])  # First 5 iterations
             ]
         
-        # Compliance standards
+        # Compliance standards (honest claims only)
         compliance = [
-            "EU AI Act 2026",
-            "ISO-26262 (Automotive Safety)",
-            "CISA 2026 Memory Safety Mandate"
+            "LLVM IR Verification (Alive2 + Z3)",
+            "HMAC Certificate Integrity",
+            "Formal Equivalence Checking"
         ]
         
         # Create certificate
@@ -175,8 +175,10 @@ class SafetyVault:
             certificate_id=cert_id
         )
         
-        # Compute signature over certificate data
-        cert_data = json.dumps(asdict(certificate), sort_keys=True)
+        # Compute signature over certificate data (excluding signature field)
+        cert_dict = asdict(certificate)
+        cert_dict.pop('signature')  # Remove empty signature field
+        cert_data = json.dumps(cert_dict, sort_keys=True)
         signature = self._compute_signature(cert_data)
         certificate.signature = signature
         
@@ -286,45 +288,43 @@ class SafetyVault:
                 issues=[f"Verification error: {str(e)}"]
             )
     
-    def generate_zkp_proof(
+    def generate_integrity_proof(
         self,
         certificate: ProofCertificate
     ) -> Dict[str, Any]:
         """
-        Generate Zero-Knowledge Proof (simplified)
+        Generate integrity proof for certificate
         
-        In production, would use actual ZKP libraries like:
-        - libsnark (zk-SNARKs)
-        - bellman (Groth16)
-        - bulletproofs
+        Uses HMAC-SHA256 for cryptographic integrity verification.
+        This is NOT a zero-knowledge proof - it's a standard
+        cryptographic signature that proves the certificate hasn't
+        been tampered with.
         
         Args:
             certificate: ProofCertificate
             
         Returns:
-            ZKP proof dictionary
+            Integrity proof dictionary
         """
-        print("\n   🔐 Generating Zero-Knowledge Proof...")
+        print("\n   🔐 Generating integrity proof...")
         
-        # Simplified ZKP (in production, would use actual cryptographic ZKP)
-        zkp = {
-            "proof_type": "zk-SNARK (simulated)",
-            "statement": "Binary is memory-safe and semantically equivalent to source",
-            "public_inputs": {
+        # Honest cryptographic proof using HMAC
+        proof = {
+            "proof_type": "HMAC-SHA256 Signature",
+            "statement": "Certificate integrity verified via cryptographic signature",
+            "public_data": {
                 "artifact_hash": certificate.artifact_hash,
                 "z3_verdict": certificate.z3_verdict,
-                "timestamp": certificate.timestamp
+                "timestamp": certificate.timestamp,
+                "certificate_id": certificate.certificate_id
             },
-            "proof": {
-                "a": self._compute_hash(certificate.artifact_hash)[:32],
-                "b": self._compute_hash(certificate.source_hash)[:32],
-                "c": self._compute_hash(certificate.ir_hash)[:32]
-            },
-            "verification_key": self._compute_hash(self.secret_key)[:32]
+            "signature": certificate.signature,
+            "algorithm": "HMAC-SHA256",
+            "note": "This proves certificate integrity, not zero-knowledge properties"
         }
         
-        print("   ✅ ZKP generated (simulated)")
-        return zkp
+        print("   ✅ Integrity proof generated")
+        return proof
     
     def get_statistics(self) -> Dict[str, int]:
         """Get vault statistics"""
@@ -372,8 +372,8 @@ define i32 @add(i32 %a, i32 %b) {
     # Export certificate
     cert_path = vault.export_certificate(certificate, "test_certificate.json")
     
-    # Generate ZKP
-    zkp = vault.generate_zkp_proof(certificate)
+    # Generate integrity proof
+    integrity_proof = vault.generate_integrity_proof(certificate)
     
     # Verify certificate
     verification = vault.verify_certificate(cert_path)
@@ -385,7 +385,7 @@ define i32 @add(i32 %a, i32 %b) {
     print(f"Verdict: {certificate.z3_verdict}")
     print(f"Signature: {certificate.signature[:32]}...")
     print(f"Verification: {'✅ Valid' if verification.valid else '❌ Invalid'}")
-    print(f"ZKP generated: {zkp['proof_type']}")
+    print(f"Integrity proof: {integrity_proof['proof_type']}")
     print("=" * 70)
     
     # Cleanup

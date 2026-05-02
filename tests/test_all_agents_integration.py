@@ -221,9 +221,9 @@ int main() {
         print(f"✅ Compliance: {', '.join(certificate.compliance_standards)}")
         
         # Step 5: Generate ZKP
-        zkp = vault.generate_zkp_proof(certificate)
-        assert zkp["proof_type"] == "zk-SNARK (simulated)"
-        print(f"✅ ZKP generated: {zkp['proof_type']}")
+        integrity_proof = vault.generate_integrity_proof(certificate)
+        assert integrity_proof["proof_type"] == "HMAC-SHA256 Signature"
+        print(f"✅ Integrity proof generated: {integrity_proof['proof_type']}")
         
         print("✅ Scenario 3 complete\n")
     
@@ -355,10 +355,10 @@ int main() {
         verification = vault.verify_certificate(cert_path)
         
         # Generate ZKP
-        zkp = vault.generate_zkp_proof(certificate)
+        integrity_proof = vault.generate_integrity_proof(certificate)
         
         print(f"   ✅ Certificate: {certificate.certificate_id}")
-        print(f"   ✅ ZKP: {zkp['proof_type']}\n")
+        print(f"   ✅ Integrity proof: {integrity_proof['proof_type']}\n")
         
         # Cleanup
         if os.path.exists(cert_path):
