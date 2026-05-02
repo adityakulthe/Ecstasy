@@ -450,9 +450,9 @@ Targeted Fix:
                 
                 metadata = {
                     "iterations": iteration,
-                    "final_verdict": "PROVED",
+                    "verdict": "PROVED",
                     "performance_overhead": perf_metrics.safety_overhead_percent,
-                    "reasoning_logs": len(self.reasoning_logs)
+                    "reasoning_logs": self.reasoning_logs
                 }
                 
                 return optimized_ir, metadata
@@ -468,12 +468,13 @@ Targeted Fix:
                     if counterexample.suggested_fix:
                         print(f"      💡 Suggested fix: {counterexample.suggested_fix[:100]}...")
                     
-                    # Apply targeted patch
-                    patched_ir = self.apply_targeted_patch(optimized_ir, counterexample)
+                    # Apply AI-powered patch using Granite
+                    print("      🤖 Calling Granite to fix the specific issue...")
+                    patched_ir = self._ai_patch_from_counterexample(optimized_ir, counterexample)
                     current_ir = patched_ir
                     
                     reasoning_log.counterexample = counterexample
-                    reasoning_log.patch_applied = "Targeted patch based on counterexample"
+                    reasoning_log.patch_applied = "AI patch from Granite based on counterexample"
                 else:
                     print("      ⚠️  Could not parse counterexample")
                     current_ir = original_ir  # Reset
@@ -490,16 +491,77 @@ Targeted Fix:
         
         metadata = {
             "iterations": self.max_iterations,
-            "final_verdict": "TIMEOUT",
-            "reasoning_logs": len(self.reasoning_logs)
+            "verdict": "TIMEOUT",
+            "reasoning_logs": self.reasoning_logs
         }
         
         return None, metadata
     
+    def _ai_patch_from_counterexample(self, ir: str, ce: CounterexampleAnalysis) -> str:
+        """
+        Use Granite to patch IR based on counterexample analysis
+        Granite reads the specific failure and fixes the exact issue
+        """
+        try:
+            from agents.ir_architect import model, is_valid_ir
+            import re
+            
+            # Build detailed prompt with counterexample info
+            prompt = f"""Alive2 found a bug in this LLVM IR.
+Failure type: {ce.failure_type}
+Root cause: {ce.root_cause if ce.root_cause else 'Unknown'}
+Counterexample values: {[(v.variable, v.value) for v in ce.values]}
+
+Fix ONLY the specific issue above. Return raw IR only, no markdown:
+{ir}"""
+            
+            r = model.chat(messages=[
+                {"role": "system", "content": "Fix the LLVM IR bug described. Raw IR only."},
+                {"role": "user", "content": prompt}
+            ], params={"max_new_tokens": 2048, "temperature": 0.1})
+            
+            out = r["choices"][0]["message"]["content"].strip()
+            # Strip markdown fences
+            out = re.sub(r"^```[a-z]*\n?", "", out, flags=re.MULTILINE)
+            out = re.sub(r"\n?```$", "", out, flags=re.MULTILINE)
+            
+            # Validate the output
+            return out if is_valid_ir(out) else ir
+        except Exception as e:
+            print(f"  ⚠️  AI patch failed: {e}, using original IR")
+            return ir
+    
     def _apply_optimization(self, ir_code: str, opt_type: str) -> str:
-        """Apply optimization pass (simplified)"""
-        # In real implementation, would use LLVM opt
-        # For now, return the same IR
+        """Apply real LLVM optimization passes"""
+        import subprocess, tempfile, shutil
+        
+        # Find opt in common locations
+        opt_path = shutil.which('opt')
+        if not opt_path:
+            # Try common homebrew locations
+            for path in ['/opt/homebrew/opt/llvm/bin/opt', '/usr/local/opt/llvm/bin/opt', '/usr/bin/opt']:
+                if os.path.exists(path):
+                    opt_path = path
+                    break
+        
+        if not opt_path:
+            print("   ⚠️  opt not found, skipping LLVM optimization")
+            return ir_code
+        
+        passes = "mem2reg,dce,instcombine" if opt_type == "performance" else "mem2reg"
+        with tempfile.NamedTemporaryFile(suffix='.ll', mode='w', delete=False) as f:
+            f.write(ir_code)
+            path = f.name
+        out = path.replace('.ll', '_opt.ll')
+        r = subprocess.run([opt_path, f'-passes={passes}', '-S', path, '-o', out], capture_output=True, text=True)
+        if r.returncode == 0:
+            result = open(out).read()
+            os.unlink(path)
+            os.unlink(out)
+            return result
+        else:
+            print(f"   ⚠️  opt failed: {r.stderr}")
+        os.unlink(path)
         return ir_code
     
     def _get_timestamp(self) -> str:
