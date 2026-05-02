@@ -892,14 +892,34 @@ Above the two Bob agents sits a Compiler Supervisor built on IBM Granite 4.0, ac
 **Alive2 + Z3:**
 The mathematical backbone. Alive2 uses the Z3 SMT solver to exhaustively verify that optimized IR is semantically equivalent to the original. This is what separates the project from "AI guessing at optimizations" to "formally verified AI optimizations."
 
-### Demo Video
+### Demo Video & Audio
 
-[Watch 3-minute demo](YOUR_YOUTUBE_OR_LOOM_LINK_HERE)
+**🎥 [Watch 3-Minute Demo Video](./Ecstasy_AI_Compiler.mp4)** | **🎧 [Listen to Audio Narration](./Ecstasy_AI_Compiler_Secures_Legacy_Infrastructure.m4a)**
 
-**Demo Script:**
-1. Show matrix multiply → Alive2 PROVED → 1.3x speedup
-2. Show unsafe strlen → bounds checks injected → Alive2 PROVED
-3. Show Fibonacci → optimization applied → Alive2 PROVED
+**What the demo shows:**
+
+1. **Memory Safety Demo** (`demo/demo.py`)
+   - AI proposes removing bounds check for performance
+   - Alive2 catches the memory safety violation with counterexample
+   - AI corrects itself after reading the proof
+   - Alive2 verifies the fix is mathematically correct
+   - **Result:** "UB triggered!" caught and fixed automatically
+
+2. **IPCP Optimization Demo** (`demo/ipcp_complete_demo.py`)
+   - Shows optimization that `clang -O3` cannot find
+   - Demonstrates inter-procedural constant propagation
+   - Granite identifies the optimization opportunity
+   - Alive2 formal verification ensures correctness
+   - **Result:** AI discovers + Math proves = Trust
+
+3. **Complete System Architecture**
+   - 6 real agents with Granite 4.0 API calls
+   - Shared knowledge base coordination
+   - Alive2 + Z3 formal verification
+   - HMAC-SHA256 proof certificates
+   - End-to-end: C source → verified binary
+
+**Key Message:** We don't rewrite the world's software. We make it safe and fast at the compiler level, and we prove it mathematically.
 
 ### Code Repository
 
