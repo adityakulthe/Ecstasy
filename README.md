@@ -43,7 +43,7 @@ This means:
 Takes source code (C/C++/Rust/Swift/Julia/Zig) and produces a verified binary that is:
 - **⚡ 1.25x Faster**: Average speedup over `clang -O3` (ACCLAIM research, April 2026)
 - **🔒 Memory-Safe**: Bounds checks injected at IR level without touching source code
-- **✅ Mathematically Proved**: Alive2 + Z3 confirm semantic equivalence across ALL possible inputs
+- **✅ Mathematically Verified**: Alive2 + Z3 confirm semantic equivalence of transformations across ALL possible inputs
 
 ### The Pitch
 
@@ -53,7 +53,7 @@ Takes source code (C/C++/Rust/Swift/Julia/Zig) and produces a verified binary th
 
 ## 🏗️ Architecture
 
-### Production System: 9 AI Agents
+### Production System: 6 Real AI Agents + 3 Architected Agents
 
 ```
 C/C++ Source Code
@@ -404,7 +404,7 @@ python -c "import fastmcp, streamlit; print('✅ All dependencies installed')"
 streamlit run frontend/app.py
 ```
 
-Then open your browser to `http://localhost:8502`
+Then open your browser to `http://localhost:8501` (or check terminal for actual port)
 
 **Features:**
 - 4 demo programs (Matrix Multiply, Unsafe String, Fibonacci, Simple Add)
@@ -413,6 +413,22 @@ Then open your browser to `http://localhost:8502`
 - Alive2 formal verification
 - Interactive 3-column layout
 - Download IR files
+
+### Quick Demo (No Setup Required)
+
+**See the system in action immediately:**
+```bash
+# Memory safety demo (shows Alive2 catching bugs)
+python3 demo/demo.py
+
+# IPCP optimization demo (AI finds what clang -O3 misses)
+python3 demo/ipcp_complete_demo.py
+
+# Full 9-agent pipeline
+python3 demo/full_pipeline_demo.py
+```
+
+**These demos work without IBM credentials** - they use deterministic LLVM optimizations as fallback.
 
 ---
 
@@ -699,7 +715,7 @@ present ACCLAIM's numbers as our own measurements.
 - ⚙️ Advanced agents architected, integration in progress (Agents 6-8)
 
 **🎬 Ready for Demo:**
-- ✅ UI running at http://localhost:8502
+- ✅ UI running at http://localhost:8501
 - ✅ All demo programs showing "PROVED" verdicts
 - ✅ Real-time compilation and verification
 - ✅ Professional modern design with animations
