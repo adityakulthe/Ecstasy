@@ -2,6 +2,22 @@
 
 > **We don't rewrite the world's software. We make it safe and fast at the compiler level, and we prove it mathematically.**
 
+## 🎥 Demo Video
+
+<div align="center">
+
+### [▶️ **WATCH THE FULL DEMO VIDEO ON YOUTUBE**](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s)
+
+[![AI Compiler Demo - Click to Watch on YouTube](https://img.youtube.com/vi/fJJUqTRudxA/maxresdefault.jpg)](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s)
+
+**Click the image above or [this link](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s) to watch the demo on YouTube**
+
+*See the AI Compiler in action with live demonstrations of memory safety hardening, formal verification with Alive2, and all 9 agents working together.*
+
+</div>
+
+---
+
 [![Tests](https://img.shields.io/badge/tests-44/44_passing-success)]()
 [![Agents](https://img.shields.io/badge/agents-6_real,_3_architected-blue)]()
 [![Git Setup](https://img.shields.io/badge/git-configured-success)]()
