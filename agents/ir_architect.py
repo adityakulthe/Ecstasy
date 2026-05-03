@@ -6,7 +6,7 @@ from ibm_watsonx_ai.foundation_models import ModelInference
 load_dotenv()
 
 model = ModelInference(
-    model_id="ibm/granite-4-h-small",
+    model_id="meta-llama/llama-3-3-70b-instruct",
     credentials=Credentials(url=os.getenv("WATSONX_URL"), api_key=os.getenv("WATSONX_APIKEY")),
     project_id=os.getenv("WATSONX_PROJECT_ID")
 )
@@ -41,7 +41,7 @@ def run(ir: str) -> str:
         response = model.chat(messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Optimize this LLVM IR. If you cannot safely optimize it, return it EXACTLY as provided:\n\n{ir}"}
-        ], params={"max_new_tokens": 4096, "temperature": 0.1})
+        ], params={"max_new_tokens": 8192, "temperature": 0.1})
         output = response["choices"][0]["message"]["content"].strip()
         # Strip markdown fences if Granite adds them anyway
         output = re.sub(r"^```[a-z]*\n?", "", output, flags=re.MULTILINE)

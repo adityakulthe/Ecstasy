@@ -458,7 +458,7 @@ class CompilerSupervisor:
             print("\n🤖 CALLING IBM GRANITE 4.0 AI MODEL...")
             print("  • Model: ibm/granite-4-h-small")
             print("  • Task: Optimize LLVM IR for performance")
-            print("  • Max tokens: 4096")
+            print("  • Max tokens: 8192")
             print("  • Temperature: 0.1 (deterministic)")
             
             import time
@@ -564,10 +564,10 @@ class CompilerSupervisor:
                 remaining = len(ir_lines) - 20
                 print(f"     ... ({remaining} more lines)")
             
-            print("\n🤖 CALLING IBM GRANITE 4.0 AI MODEL...")
-            print("  • Model: ibm/granite-4-h-small")
+            print("\n🤖 CALLING META LLAMA 3.3 70B AI MODEL...")
+            print("  • Model: meta-llama/llama-3-3-70b-instruct")
             print("  • Task: Add memory safety bounds checks")
-            print("  • Max tokens: 4096")
+            print("  • Max tokens: 8192")
             print("  • Temperature: 0.1 (deterministic)")
             
             import time

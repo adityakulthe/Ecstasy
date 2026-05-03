@@ -7,7 +7,7 @@ from ibm_watsonx_ai.foundation_models import ModelInference
 load_dotenv()
 
 model = ModelInference(
-    model_id="ibm/granite-4-h-small",
+    model_id="meta-llama/llama-3-3-70b-instruct",
     credentials=Credentials(
         url=os.getenv("WATSONX_URL"),
         api_key=os.getenv("WATSONX_APIKEY")
@@ -46,7 +46,7 @@ def run(ir: str) -> str:
         ]
         response = model.chat(
             messages=messages,
-            params={"max_new_tokens": 4096, "temperature": 0.1}
+            params={"max_new_tokens": 8192, "temperature": 0.1}
         )
         output = response["choices"][0]["message"]["content"].strip()
         output = re.sub(r"^```[a-z]*\n?", "", output, flags=re.MULTILINE)
