@@ -6,11 +6,11 @@
 
 <div align="center">
 
-### [▶️ **WATCH THE FULL DEMO VIDEO ON YOUTUBE**](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s)
+### [▶️ **WATCH THE FULL DEMO VIDEO ON YOUTUBE**](https://www.youtube.com/watch?v=FictO9BoHnk)
 
-[![AI Compiler Demo - Click to Watch on YouTube](https://img.youtube.com/vi/fJJUqTRudxA/maxresdefault.jpg)](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s)
+[![AI Compiler Demo - Click to Watch on YouTube](https://img.youtube.com/vi/FictO9BoHnk/maxresdefault.jpg)](https://www.youtube.com/watch?v=FictO9BoHnk)
 
-**Click the image above or [this link](https://www.youtube.com/watch?v=fJJUqTRudxA&t=2s) to watch the demo on YouTube**
+**Click the image above or [this link](https://www.youtube.com/watch?v=FictO9BoHnk) to watch the demo on YouTube**
 
 *See the AI Compiler in action with live demonstrations of memory safety hardening, formal verification with Alive2, and all 9 agents working together.*
 
@@ -960,30 +960,5 @@ https://github.com/adityakulthe/Ecstasy
 - Complete source code with all 9 agents
 - 50 passing tests (44 unit + 4 integration + 2 E2E)
 - IPCP demonstration showing optimization clang -O3 misses
-- Comprehensive documentation
-
-### Team
-
-- **Person 1**: Backend/Infrastructure (MCP Server + Alive2 Integration)
-- **Person 2**: AI/Agents (Bob Custom Modes + Supervisor)
-- **Person 3**: Frontend/Demo (Streamlit UI + Submission Materials)
-
----
-
-## 🎖️ Why This Wins
-
-**Our Guarantee:**
-- ✅ **6 real agents + 3 architected** implemented and tested
-- ✅ **48 tests + 4 integration scenarios** ensure demo won't crash
-- ✅ Mathematical proof shown live (Alive2 PROVED)
-- ✅ Real speedup metrics (1.25x average, up to 100x on algorithmic hotspots)
-- ✅ Solves $2.4 trillion problem
-- ✅ Addresses memory safety crisis (70% of CVEs)
-- ✅ Trust through verification (AI + Math)
-- ✅ **Production-ready for enterprise deployment**
-- ✅ Cryptographic proof certificates (HMAC-SHA256)
-- ✅ Hardware-specific optimization (Apple M4, Intel Falcon Shores)
-
----
 
 **Built with ❤️ in 48 hours | IBM Bob + watsonx.ai + Alive2 + Z3**
