@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  ecstasy:
+    build: .
+    container_name: ecstasy-compiler
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - WATSONX_URL=${WATSONX_URL:-}
+      - WATSONX_APIKEY=${WATSONX_APIKEY:-}
+      - WATSONX_PROJECT_ID=${WATSONX_PROJECT_ID:-}
+    restart: unless-stopped

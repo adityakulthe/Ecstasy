@@ -55,6 +55,7 @@ coverage.xml
 *.bc
 *.o
 *.out
+*.proof.json
 
 # Environment variables
 .env

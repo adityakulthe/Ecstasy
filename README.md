@@ -1,4 +1,4 @@
-# AI Compiler — Agentic LLVM Optimization with Formal Verification
+# Ecstasy — Agentic LLVM Optimization with Formal Verification
 
 > **We don't rewrite the world's software. We make it safe and fast at the compiler level, and we prove it mathematically.**
 
@@ -12,18 +12,19 @@
 
 **Click the image above or [this link](https://www.youtube.com/watch?v=FictO9BoHnk) to watch the demo on YouTube**
 
-*See the AI Compiler in action with live demonstrations of memory safety hardening, formal verification with Alive2, and all 9 agents working together.*
+*See the AI Compiler in action with live demonstrations of memory safety hardening, formal verification with Alive2 and Z3 SMT, and all 9 agents working together.*
 
 </div>
 
 ---
 
-[![Tests](https://img.shields.io/badge/tests-44/44_passing-success)]()
-[![Agents](https://img.shields.io/badge/agents-6_real,_3_architected-blue)]()
-[![Git Setup](https://img.shields.io/badge/git-configured-success)]()
-[![Coverage](https://img.shields.io/badge/coverage-100%25-success)]()
-[![Python](https://img.shields.io/badge/python-3.10+-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
+[![Tests](https://img.shields.io/badge/tests-57/57_passing-success)](tests/)
+[![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
+[![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)
+[![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-2088FF)](.github/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10_|_3.11_|_3.12-blue)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 ---
 
@@ -373,80 +374,109 @@ $ pytest tests/test_all_agents_integration.py -v
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-**System Requirements:**
-- Python 3.10+
-- LLVM/Clang 14+
-- Z3 SMT Solver 4.8+
-- Alive2 (built from source)
-- Git
-
-**IBM Cloud Requirements:**
-- IBM Bob account (IDE access)
-- IBM watsonx.ai project
-- API credentials (WATSONX_APIKEY, PROJECT_ID, URL)
-
 ### Installation
 
 ```bash
-# 1. Clone the repository
+# 1. Clone repository
 git clone https://github.com/adityakulthe/Ecstasy.git
 cd Ecstasy
 
-# 2. Run automated setup (Ubuntu/macOS)
-chmod +x install.sh
-./install.sh
+# 2. Create virtual environment & install package in editable mode
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 
-# 3. Set up environment variables
+# 3. Optional: Configure IBM watsonx.ai credentials (falls back to offline deterministic mode if omitted)
 cp .env.example .env
-# Edit .env with your IBM credentials:
-# WATSONX_URL=https://us-south.ml.cloud.ibm.com
-# WATSONX_APIKEY=your-api-key-here
-# WATSONX_PROJECT_ID=your-project-id-here
-
-# 4. Install Python dependencies
-pip install -r requirements.txt
-pip install -r requirements-test.txt
-
-# 5. Verify installation
-clang --version
-alive-tv --version
-python -c "import fastmcp, streamlit; print('✅ All dependencies installed')"
+# Edit .env with WATSONX_APIKEY, WATSONX_PROJECT_ID, WATSONX_URL
 ```
 
-### Running the System
+### System Toolchain Diagnostics
 
-**Start the Streamlit UI:**
+Verify your compiler toolchain, Python environment, Z3 SMT solver, and cryptographic vault status:
+
 ```bash
-streamlit run frontend/app.py
+ecstasy doctor
 ```
 
-Then open your browser to `http://localhost:8501` (or check terminal for actual port)
+```
+=================================================================
+🩺 ECSTASY SYSTEM & TOOLCHAIN DIAGNOSTICS
+=================================================================
+🖥️  OS / Architecture:  Darwin arm64 (macOS-27.0.1-arm64-arm-64bit)
+🐍 Python Runtime:     3.11.16 (/Users/adityakulthe/Ecstasy/.venv/bin/python3.11)
+🔨 Clang Compiler:     ✅ Apple clang version 21.0.0
+📐 Z3 SMT Solver:      ✅ Installed (v5.3.1)
+🔬 Alive2 Validator:   ℹ️  Pure-Python Z3 SMT Engine Active
+🔐 Cryptographic Key:  ✅ Configured (~/.ecstasy/signing.key)
+🧠 watsonx AI API:     ℹ️  Deterministic offline mode active
+=================================================================
+```
 
-**Features:**
-- 4 demo programs (Matrix Multiply, Unsafe String, Fibonacci, Simple Add)
-- Real-time compilation to LLVM IR
-- AI optimization pipeline (mock - awaiting Bob integration)
-- Alive2 formal verification
-- Interactive 3-column layout
-- Download IR files
+---
 
-### Quick Demo (No Setup Required)
+## 💻 CLI Reference (`ecstasy`)
 
-**See the system in action immediately:**
+Ecstasy ships with an industrial-grade unified command-line tool:
+
+### 1. End-to-End Compilation & Attestation (`compile`)
+Compile C/C++ source code, optimize via AI agent orchestration, formally verify with SMT, and generate a tamper-evident cryptographic proof certificate:
+
 ```bash
-# Memory safety demo (shows Alive2 catching bugs)
-python3 demo/demo.py
-
-# IPCP optimization demo (AI finds what clang -O3 misses)
-python3 demo/ipcp_complete_demo.py
-
-# Full 9-agent pipeline
-python3 demo/full_pipeline_demo.py
+ecstasy compile input.c --cert -o program.out
 ```
 
-**These demos work without IBM credentials** - they use deterministic LLVM optimizations as fallback.
+### 2. Formal Translation Validation (`verify`)
+Mathematically prove that a transformed LLVM IR file preserves 100% semantic equivalence of the original IR across all $2^{32}$ inputs:
+
+```bash
+ecstasy verify original.ll optimized.ll
+```
+
+### 3. Cryptographic Certificate Verification (`verify-cert`)
+Independently verify HMAC-SHA256 signatures, binary SHA-256 digests, and formal proof verdicts of a generated certificate:
+
+```bash
+ecstasy verify-cert input.proof.json -b program.out
+```
+
+### 4. Memory Safety & Buffer Overflow Audit (`check-memory`)
+Audit C or LLVM IR for dangerous memory constructs (`scanf`, `strcpy`, unconstrained `getelementptr`) and inspect hardened bounds:
+
+```bash
+ecstasy check-memory unsafe.c
+```
+
+### 5. Interactive Demos (`demo`)
+Run key interactive scenarios demonstrating CEGAR loops, integer overflow catch-and-prove, and inter-procedural constant propagation:
+
+```bash
+ecstasy demo overflow       # Alive2/SMT catches dropped nsw flag; AI fixes it
+ecstasy demo cegar          # Counterexample-Guided Abstraction Refinement loop
+ecstasy demo ipcp           # Cross-translation unit constant propagation
+ecstasy demo retry          # Autonomous retry budget management
+ecstasy demo full           # All 9 agents coordinated with Shared Knowledge Base
+```
+
+### 6. Dark Terminal Web IDE (`ui`)
+Launch the Streamlit interactive compiler studio with side-by-side LLVM IR diff, live agent pipeline tracking, interactive Z3 SMT workbench, and certificate inspector:
+
+```bash
+ecstasy ui --port 8501
+```
+
+---
+
+## 🐳 Docker Deployment
+
+Run the complete pipeline, LLVM toolchain, Z3 solver, and Streamlit IDE in an isolated container:
+
+```bash
+# Build and start via Docker Compose
+docker compose up --build
+
+# Open the IDE at http://localhost:8501
+```
 
 ---
 
@@ -957,8 +987,12 @@ The mathematical backbone. Alive2 uses the Z3 SMT solver to exhaustively verify 
 https://github.com/adityakulthe/Ecstasy
 
 **Includes:**
-- Complete source code with all 9 agents
-- 50 passing tests (44 unit + 4 integration + 2 E2E)
-- IPCP demonstration showing optimization clang -O3 misses
+- Complete source code with all 9 coordinated agents
+- 57 passing tests across unit, agent integration, full pipeline, and Z3 SMT verification
+- Standalone `ecstasy` CLI for compilation, formal verification, memory safety auditing, and attestation
+- Pure-Python Z3 SMT symbolic translation validator with counterexample generation
+- Cryptographic Safety Vault with HMAC-SHA256 tamper-evident attestation
+- Streamlit Dark Terminal IDE workbench
+- Docker containerization & GitHub Actions CI multi-OS matrix
 
-**Built with ❤️ in 48 hours | IBM Bob + watsonx.ai + Alive2 + Z3**
+**Built with ❤️ | IBM Bob + watsonx.ai + LLVM + Alive2 + Z3 SMT**

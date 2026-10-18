@@ -34,7 +34,8 @@ dev = [
 ecstasy = "cli:main"
 
 [tool.setuptools]
-packages = ["agents", "server", "frontend", "demo"]
+packages = ["agents", "server", "frontend", "demo", "engine"]
 py-modules = ["cli"]
+
 
 

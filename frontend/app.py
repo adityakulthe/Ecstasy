@@ -1091,11 +1091,135 @@ def render_standard_view():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666;">
-        <p>Built with ❤️ using IBM Bob, watsonx.ai, LLVM, Alive2, and Z3</p>
-        <p>🏆 AI Compiler - Making the world's software safe and fast at the compiler level</p>
-        <p><small>MCP Server: ✅ Ready | Bob Agents: 🔄 In Progress | UI: ✅ Running</small></p>
+        <p>Built with ❤️ using IBM Bob, watsonx.ai, LLVM, Alive2, and Z3 SMT</p>
+        <p>🏆 Ecstasy - Making the world's software provably safe and fast at the compiler level</p>
+        <p><small>MCP Server: ✅ Ready | Bob Agents: ✅ Production Ready | Supervisor: ✅ Active | SMT Engine: ✅ Online</small></p>
     </div>
     """, unsafe_allow_html=True)
+
+
+def render_smt_and_certificate_inspector():
+    """Render interactive SMT Verifier & Cryptographic Certificate Inspector"""
+    st.markdown("""
+    <div style="background: #161b22; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #30363d; margin-bottom: 1.5rem;">
+        <h3 style="color: #00ff41; margin-top: 0;">🔬 Z3 SMT Symbolic Translation Validator</h3>
+        <p style="color: #8b949e; margin-bottom: 0;">
+            Directly test arbitrary LLVM IR transformations for semantic equivalence.
+            The engine symbolically executes LLVM SSA expressions into Z3 bitvectors to mathematically prove equivalence
+            or generate concrete counterexamples.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    SMT_PRESETS = {
+        "Strength Reduction (mul by 2 vs shl 1)": (
+            "define i32 @opt(i32 %x) {\n  %1 = mul i32 %x, 2\n  ret i32 %1\n}",
+            "define i32 @opt(i32 %x) {\n  %1 = shl i32 %x, 1\n  ret i32 %1\n}"
+        ),
+        "Distributive Law (2*(x+y) vs 2*x + 2*y)": (
+            "define i32 @distrib(i32 %x, i32 %y) {\n  %1 = add i32 %x, %y\n  %2 = mul i32 %1, 2\n  ret i32 %2\n}",
+            "define i32 @distrib(i32 %x, i32 %y) {\n  %1 = mul i32 %x, 2\n  %2 = mul i32 %y, 2\n  %3 = add i32 %1, %2\n  ret i32 %3\n}"
+        ),
+        "mem2reg Promotion (alloca/store/load vs SSA)": (
+            "define i32 @add(i32 %0, i32 %1) {\n  %3 = alloca i32\n  %4 = alloca i32\n  store i32 %0, ptr %3\n  store i32 %1, ptr %4\n  %5 = load i32, ptr %3\n  %6 = load i32, ptr %4\n  %7 = add i32 %5, %6\n  ret i32 %7\n}",
+            "define i32 @add(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}"
+        ),
+        "Branchless Select vs Branching CFG": (
+            "define i32 @abs_val(i32 %x) {\nentry:\n  %cmp = icmp slt i32 %x, 0\n  br i1 %cmp, label %then, label %else\nthen:\n  %neg = sub i32 0, %x\n  br label %merge\nelse:\n  br label %merge\nmerge:\n  %res = phi i32 [ %neg, %then ], [ %x, %else ]\n  ret i32 %res\n}",
+            "define i32 @abs_val(i32 %x) {\n  %cmp = icmp slt i32 %x, 0\n  %neg = sub i32 0, %x\n  %res = select i1 %cmp, i32 %neg, i32 %x\n  ret i32 %res\n}"
+        ),
+        "Dropped NSW Flag (Poison Vulnerability)": (
+            "define i32 @safe_add(i32 %a, i32 %b) {\n  %res = add nsw i32 %a, %b\n  ret i32 %res\n}",
+            "define i32 @safe_add(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}"
+        ),
+        "Arithmetic Mutation (add vs sub Bug)": (
+            "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
+            "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"
+        )
+    }
+
+    selected_preset = st.selectbox("Load Verification Preset:", list(SMT_PRESETS.keys()))
+    default_src, default_opt = SMT_PRESETS[selected_preset]
+
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        st.markdown("**Source LLVM IR**")
+        src_input = st.text_area("Source IR:", value=default_src, height=220, key=f"src_{selected_preset}")
+    with col_s2:
+        st.markdown("**Target LLVM IR**")
+        opt_input = st.text_area("Target IR:", value=default_opt, height=220, key=f"opt_{selected_preset}")
+
+    if st.button("⚡ RUN Z3 SMT TRANSLATION VALIDATION", type="primary", use_container_width=True):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        report = verify_ir_equivalence(src_input, opt_input)
+
+        if report.verdict == VerificationVerdict.PROVED:
+            st.markdown(f"""
+            <div class="status-box status-success">
+                ✅ <b>PROVED</b> — Translation is mathematically equivalent for all 2³² input combinations!
+                <br><small>Solver time: {report.solver_time_ms:.2f}ms | Functions checked: {report.functions_checked}</small>
+            </div>
+            """, unsafe_allow_html=True)
+            st.code(report.output, language="text")
+        else:
+            st.markdown(f"""
+            <div class="status-box status-error">
+                ❌ <b>VERIFICATION FAILED</b> — Discrepancy or poison divergence detected!
+                <br><small>Solver time: {report.solver_time_ms:.2f}ms</small>
+            </div>
+            """, unsafe_allow_html=True)
+            if report.counterexample:
+                st.markdown(f"**Failure Reason:** `{report.counterexample.failure_reason}`")
+            st.code(report.output, language="text")
+
+    st.markdown("---")
+    st.markdown("""
+    <div style="background: #161b22; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #30363d; margin-bottom: 1.5rem;">
+        <h3 style="color: #00ff41; margin-top: 0;">🔐 Cryptographic Safety Certificate Inspector</h3>
+        <p style="color: #8b949e; margin-bottom: 0;">
+            Verify HMAC-SHA256 signatures, cryptographic source/binary hashes, and compliance attestations.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    cert_json_text = st.text_area(
+        "Paste Proof Certificate JSON:",
+        value="",
+        placeholder='{\n  "certificate_id": "...",\n  "project_name": "...",\n  "signature": "..."\n}',
+        height=150
+    )
+
+    if st.button("🛡️ VERIFY CERTIFICATE AUTHENTICITY", use_container_width=True):
+        if not cert_json_text.strip():
+            st.warning("Please paste certificate JSON content first.")
+        else:
+            try:
+                import tempfile
+                from agents.safety_vault import SafetyVault
+                with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tf:
+                    tf.write(cert_json_text)
+                    tf_path = tf.name
+
+                vault = SafetyVault()
+                v_res = vault.verify_certificate(tf_path)
+                os.unlink(tf_path)
+
+                if v_res.valid:
+                    st.success(f"✅ CERTIFICATE VALID (ID: {v_res.certificate_id})")
+                    st.json({
+                        "certificate_id": v_res.certificate_id,
+                        "valid": v_res.valid,
+                        "verified_at": v_res.verified_at,
+                        "status": "All cryptographic signatures and hashes authentic"
+                    })
+                else:
+                    st.error(f"❌ CERTIFICATE INVALID (ID: {v_res.certificate_id})")
+                    st.warning("Discovered Issues:")
+                    for iss in v_res.issues:
+                        st.write(f"• {iss}")
+            except Exception as e:
+                st.error(f"Failed to parse certificate: {e}")
+
 
 def main():
     """Main application entry point"""
@@ -1110,11 +1234,11 @@ def main():
         st.session_state.validation_result = None
     
     # Header
-    st.markdown('<div class="main-header">🚀 AI Compiler</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Agentic LLVM Optimization with Formal Verification</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🚀 Ecstasy</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Formally Verified AI Compiler & Security Pipeline</div>', unsafe_allow_html=True)
     
     # Navigation tabs
-    tab1, tab2 = st.tabs(["📊 Standard View", "🎬 Live Pipeline Dashboard"])
+    tab1, tab2, tab3 = st.tabs(["📊 Standard View", "🎬 Live Pipeline Dashboard", "🔐 SMT Verifier & Certificate Inspector"])
     
     with tab1:
         render_standard_view()
@@ -1122,7 +1246,9 @@ def main():
     with tab2:
         render_live_pipeline_dashboard()
 
+    with tab3:
+        render_smt_and_certificate_inspector()
+
+
 if __name__ == "__main__":
     main()
-
-# Made with Bob

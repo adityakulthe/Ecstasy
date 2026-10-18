@@ -59,13 +59,25 @@ class SafetyVault:
         Args:
             secret_key: Secret key for HMAC signatures (generated if not provided)
         """
-        self.secret_key = secret_key or self._generate_secret_key()
+        env_key = os.getenv("ECSTASY_SIGNING_KEY")
+        self.secret_key = secret_key or env_key or self._get_or_create_secret_key()
         self.certificates_generated = 0
         self.certificates_verified = 0
     
-    def _generate_secret_key(self) -> str:
-        """Generate a random secret key"""
-        return hashlib.sha256(os.urandom(32)).hexdigest()
+    def _get_or_create_secret_key(self) -> str:
+        """Get persistent signing key from disk or generate stable key"""
+        key_dir = Path.home() / ".ecstasy"
+        key_file = key_dir / "signing.key"
+        try:
+            if key_file.exists():
+                return key_file.read_text().strip()
+            key_dir.mkdir(parents=True, exist_ok=True)
+            new_key = hashlib.sha256(os.urandom(32)).hexdigest()
+            key_file.write_text(new_key)
+            return new_key
+        except Exception:
+            # Stable fallback key for deterministic environments
+            return hashlib.sha256(b"ecstasy-default-deterministic-signing-key").hexdigest()
     
     def _compute_hash(self, data: str) -> str:
         """Compute SHA-256 hash of data"""

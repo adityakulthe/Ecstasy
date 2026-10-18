@@ -133,6 +133,131 @@ def cmd_demo(args):
     subprocess.run([sys.executable, str(target_script)])
 
 
+def cmd_verify_cert(args):
+    cert_path = Path(args.cert)
+    if not cert_path.exists():
+        print(f"❌ Error: Certificate file not found: {cert_path}")
+        sys.exit(1)
+
+    vault = SafetyVault()
+    res = vault.verify_certificate(str(cert_path), args.binary)
+
+    print("\n" + "=" * 65)
+    print("🔐 CRYPTOGRAPHIC PROOF VERIFICATION")
+    print("=" * 65)
+    print(f"Certificate ID: {res.certificate_id}")
+    print(f"Authentic:      {'✅ VALID' if res.valid else '❌ INVALID'}")
+    print(f"Verified At:    {res.verified_at}")
+    if res.issues:
+        print("⚠️  Issues Discovered:")
+        for issue in res.issues:
+            print(f"   • {issue}")
+    else:
+        print("🛡️  All cryptographic hashes and SMT verdicts verified successfully.")
+    print("=" * 65)
+
+
+def cmd_doctor(args):
+    import platform
+    import shutil
+    import subprocess
+
+    print("\n" + "=" * 65)
+    print("🩺 ECSTASY SYSTEM & TOOLCHAIN DIAGNOSTICS")
+    print("=" * 65)
+
+    # 1. OS & Architecture
+    print(f"🖥️  OS / Architecture:  {platform.system()} {platform.machine()} ({platform.platform()})")
+    print(f"🐍 Python Runtime:     {sys.version.split()[0]} ({sys.executable})")
+
+    # 2. Clang Compiler
+    clang_path = shutil.which("clang")
+    if clang_path:
+        try:
+            ver = subprocess.run([clang_path, "--version"], capture_output=True, text=True, timeout=5).stdout.splitlines()[0]
+            print(f"🔨 Clang Compiler:     ✅ {ver} ({clang_path})")
+        except Exception:
+            print(f"🔨 Clang Compiler:     ✅ Found at {clang_path}")
+    else:
+        print("🔨 Clang Compiler:     ❌ Not found in PATH")
+
+    # 3. LLVM Opt
+    opt_path = shutil.which("opt")
+    if opt_path:
+        print(f"⚡ LLVM Opt:           ✅ Found at {opt_path}")
+    else:
+        print("⚡ LLVM Opt:           ⚠️  Not in PATH (optional for raw SMT verification)")
+
+    # 4. Z3 SMT Solver
+    try:
+        import z3
+        z3_ver = z3.get_version_string() if hasattr(z3, "get_version_string") else getattr(z3, "__version__", "unknown")
+        print(f"📐 Z3 SMT Solver:      ✅ Installed (v{z3_ver})")
+    except ImportError:
+        print("📐 Z3 SMT Solver:      ❌ z3-solver not installed")
+
+    # 5. Alive2 Translation Validator
+    alive_path = shutil.which("alive-tv") or ("/opt/homebrew/bin/alive-tv" if os.path.exists("/opt/homebrew/bin/alive-tv") else None)
+    if alive_path:
+        print(f"🔬 Alive2 Validator:   ✅ Found at {alive_path}")
+    else:
+        print("🔬 Alive2 Validator:   ℹ️  Native binary not found — using Pure-Python Z3 SMT Engine")
+
+    # 6. Safety Vault Key
+    key_dir = Path.home() / ".ecstasy"
+    key_file = key_dir / "signing.key"
+    if key_file.exists():
+        print(f"🔐 Cryptographic Key:  ✅ Configured ({key_file})")
+    else:
+        print(f"🔐 Cryptographic Key:  ℹ️  Will be generated automatically on first cert export")
+
+    # 7. IBM watsonx AI
+    watson_key = os.getenv("WATSONX_APIKEY")
+    if watson_key:
+        print(f"🧠 watsonx AI API:     ✅ API Key configured ({watson_key[:4]}...{watson_key[-4:]})")
+    else:
+        print("🧠 watsonx AI API:     ℹ️  WATSONX_APIKEY not set (running in deterministic offline mode)")
+
+    print("=" * 65)
+
+
+def cmd_check_memory(args):
+    input_path = Path(args.target)
+    if not input_path.exists():
+        print(f"❌ Error: File not found: {input_path}")
+        sys.exit(1)
+
+    print(f"\n🛡️  Analyzing Memory Safety for: {input_path.name}")
+    content = input_path.read_text()
+    if input_path.suffix in (".c", ".cpp", ".cc"):
+        compile_res = compile_to_ir(content, input_path.name)
+        if not compile_res["success"]:
+            print(f"❌ Clang compilation error: {compile_res.get('error')}")
+            sys.exit(1)
+        ir_code = compile_res["ir"]
+    else:
+        ir_code = content
+
+    from server.mcp_server import apply_memory_safety
+    safety_res = apply_memory_safety(ir_code, use_ai=not args.offline)
+
+    print("\n" + "=" * 65)
+    print("🛡️  MEMORY SAFETY AUDIT REPORT")
+    print("=" * 65)
+    print(f"Checks Injected:  {safety_res.get('checks_added', 0)}")
+    print(f"Hardened Applied: {'✅ YES' if safety_res.get('safety_applied') else 'ℹ️  CLEAN (No vulnerabilities)'}")
+    locations = safety_res.get('check_locations', [])
+    if locations:
+        print("📍 Vulnerability Locations Addressed:")
+        for loc in locations:
+            print(f"   • {loc}")
+    if args.output:
+        out_p = Path(args.output)
+        out_p.write_text(safety_res.get("hardened_ir", ir_code))
+        print(f"📄 Hardened IR exported to: {out_p}")
+    print("=" * 65)
+
+
 def cmd_ui(args):
     print(f"🚀 Launching Ecstasy Dark Terminal IDE on port {args.port}...")
     import subprocess
@@ -165,9 +290,23 @@ def main():
     verify_p.add_argument("opt", help="Transformed LLVM IR file (.ll)")
     verify_p.add_argument("--timeout", type=int, default=60, help="SMT timeout in seconds")
 
+    # verify-cert
+    cert_p = subparsers.add_parser("verify-cert", help="Verify authenticity and integrity of a proof certificate")
+    cert_p.add_argument("cert", help="Path to proof certificate JSON file")
+    cert_p.add_argument("-b", "--binary", help="Optional path to binary to verify SHA-256 hash")
+
+    # check-memory
+    mem_p = subparsers.add_parser("check-memory", help="Audit C or LLVM IR for memory safety & buffer overflow protection")
+    mem_p.add_argument("target", help="Path to C (.c) or LLVM IR (.ll) file")
+    mem_p.add_argument("-o", "--output", help="Optional path to output hardened IR")
+    mem_p.add_argument("--offline", action="store_true", help="Run deterministic checks without cloud AI")
+
+    # doctor
+    subparsers.add_parser("doctor", help="Run system and toolchain diagnostic checks")
+
     # demo
     demo_p = subparsers.add_parser("demo", help="Run interactive demonstration scenarios")
-    demo_p.add_argument("name", help="Demo name: midpoint, overflow, retry, ipcp, full, cegar")
+    demo_p.add_argument("name", help="Demo name: midpoint, overflow, retry, ipcp, full, cegar, comprehensive")
 
     # ui
     ui_p = subparsers.add_parser("ui", help="Launch Streamlit Web IDE")
@@ -184,6 +323,12 @@ def main():
         cmd_compile(args)
     elif args.command == "verify":
         cmd_verify(args)
+    elif args.command == "verify-cert":
+        cmd_verify_cert(args)
+    elif args.command == "check-memory":
+        cmd_check_memory(args)
+    elif args.command == "doctor":
+        cmd_doctor(args)
     elif args.command == "demo":
         cmd_demo(args)
     elif args.command == "ui":
