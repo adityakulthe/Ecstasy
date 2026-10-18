@@ -30,7 +30,8 @@ def compile_to_ir(c_source: str, filename: str) -> Dict[str, Any]:
     """
     try:
         # Create temporary file for source code
-        with tempfile.NamedTemporaryFile(mode='w', suffix=filename, delete=False) as src_file:
+        clean_suffix = Path(filename).suffix if Path(filename).suffix else ('.cpp' if filename.endswith('.cpp') else '.c')
+        with tempfile.NamedTemporaryFile(mode='w', suffix=clean_suffix, delete=False) as src_file:
             src_file.write(c_source)
             src_path = src_file.name
         
