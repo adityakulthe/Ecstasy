@@ -26,7 +26,7 @@ The following file patterns are excluded from code reviews:
 <name>💻 Code</name>
 
 
-# Current Workspace Directory (/Users/anjalikulthe/Desktop/hackathon/Ecstasy) Files
+# Current Workspace Directory (/Users/adityakulthe/Desktop/hackathon/Ecstasy) Files
 .gitignore
 pytest.ini
 README.md
@@ -1604,7 +1604,7 @@ I'll push the changes to the remote repository:
 **User:**
 
 [execute_command for 'git add -A && git commit -m "feat: update README with all 9 production agents and integration test results" && git push'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 128
 Output:
 [main 5f370ff] feat: update README with all 9 production agents and integration test results
@@ -1692,7 +1692,7 @@ I need to set the upstream branch and push:
 **User:**
 
 [execute_command for 'git push --set-upstream origin main'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 To github.com:adityakulthe/Ecstasy.git
    0f3bac0..5f370ff  main -> main
@@ -2208,15 +2208,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Now let me demonstrate our actual IR compilation and show you what we're working with:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && clang -S -emit-llvm -O0 tests/fixtures/simple.c -o /tmp/simple.ll && head -30 /tmp/simple.ll</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && clang -S -emit-llvm -O0 tests/fixtures/simple.c -o /tmp/simple.ll && head -30 /tmp/simple.ll</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && clang -S -emit-llvm -O0 tests/fixtures/simple.c -o /tmp/simple.ll && head -30 /tmp/simple.ll'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && clang -S -emit-llvm -O0 tests/fixtures/simple.c -o /tmp/simple.ll && head -30 /tmp/simple.ll'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 ; ModuleID = 'tests/fixtures/simple.c'
 source_filename = "tests/fixtures/simple.c"
@@ -2300,7 +2300,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Perfect! Now let me show you an optimized version and test our MCP server's actual IR compilation:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir
 import json
 
@@ -2332,7 +2332,7 @@ print('IR contains loop optimization opportunities:', 'for.cond' in result['ir']
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir
 import json
 
@@ -2358,7 +2358,7 @@ print(f'Success: {result[\"success\"]}')
 print(f'IR Length: {len(result[\"ir\"])} characters')
 print('IR contains loop optimization opportunities:', 'for.cond' in result['ir'])
 "'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 === TEST 1: Compile simple.c ===
 Success: True
@@ -2433,7 +2433,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Excellent! Now let me test the complete end-to-end pipeline with Alive2 verification:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import tempfile
 import os
@@ -2484,7 +2484,7 @@ else:
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import tempfile
 import os
@@ -2529,7 +2529,7 @@ else:
     if 'error' in validation:
         print(f'   Error: {validation[\"error\"]}')
 "'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 1
 Output:
 Traceback (most recent call last):
@@ -2822,7 +2822,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Now I understand the API. Let me run the correct end-to-end test:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 
@@ -2897,7 +2897,7 @@ os.unlink(opt_path)
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 -c "
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 -c "
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 
@@ -2966,7 +2966,7 @@ else:
 os.unlink(orig_path)
 os.unlink(opt_path)
 "'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 1
 Output:
 Traceback (most recent call last):
@@ -3060,7 +3060,7 @@ Let me find the correct path for opt:
 **User:**
 
 [execute_command for 'which opt'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 1
 Output:
 
@@ -3123,7 +3123,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **User:**
 
 [execute_command for 'ls /opt/homebrew/opt/llvm/bin/ | grep opt'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 llvm-opt-report
 mlir-minimal-opt
@@ -3185,7 +3185,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Perfect! Now let me run the complete end-to-end test with the correct path:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 import tempfile
@@ -3275,7 +3275,7 @@ EOF
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 import tempfile
@@ -3358,7 +3358,7 @@ try:
 except:
     pass
 EOF'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 === COMPLETE END-TO-END IR PIPELINE TEST ===
 
@@ -3453,7 +3453,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Excellent! Now let me test with a more complex example to show real optimization benefits:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 import tempfile
@@ -3526,7 +3526,7 @@ EOF
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 << 'EOF'
 from server.mcp_server import compile_to_ir, optimize_ir_pass, validate_translation
 import subprocess
 import tempfile
@@ -3592,7 +3592,7 @@ try:
 except:
     pass
 EOF'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 === COMPLEX LOOP OPTIMIZATION TEST ===
 
@@ -4396,15 +4396,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Now let me commit and push these changes:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: add end-to-end IR pipeline verification section with real tool testing" && git push</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: add end-to-end IR pipeline verification section with real tool testing" && git push</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: add end-to-end IR pipeline verification section with real tool testing" && git push'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: add end-to-end IR pipeline verification section with real tool testing" && git push'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 [main d38739f] docs: add end-to-end IR pipeline verification section with real tool testing
  1 file changed, 30 insertions(+), 1 deletion(-)
@@ -4869,6 +4869,6 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Perfect! Now I'll migrate the clean code to the new repository. Let me create a fresh copy without any Git history:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon && mkdir Ecstasy-Clean && cd Ecstasy-Clean && cp -r ../Ecstasy/* . && rm -rf .git && ls -la</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon && mkdir Ecstasy-Clean && cd Ecstasy-Clean && cp -r ../Ecstasy/* . && rm -rf .git && ls -la</command>
 </execute_command>
 

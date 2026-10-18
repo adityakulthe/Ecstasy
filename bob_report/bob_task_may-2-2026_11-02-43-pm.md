@@ -1,16 +1,16 @@
 **User:**
 
 <task>
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % sed -i '' 's|WATSONX_URL=.*|WATSONX_URL=https://us-south.ml.cloud.ibm.com|g' .env
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % sed -i '' 's|WATSONX_URL=.*|WATSONX_URL=https://us-south.ml.cloud.ibm.com|g' .env
 sed -i '' 's|WATSONX_PROJECT_ID=.*|WATSONX_PROJECT_ID=b377fbe0-52bd-4020-b4c0-d2c7c6204618|g' .env
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % python3 -c "
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % python3 -c "
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -29,13 +29,13 @@ Unable to get model specifications from url: https://us-south.ml.cloud.ibm.com
 Reason: Failure during Get available foundation models. (GET https://us-south.ml.cloud.ibm.com/ml/v1/foundation_model_specs?version=2026-04-20&project_id=b377fbe0-52bd-4020-b4c0-d2c7c6204618&filters=%21lifecycle_withdrawn&limit=200)
 Status code: 403, body: {"errors":[{"code":"no_associated_service_instance_error","message":"project_id b377fbe0-52bd-4020-b4c0-d2c7c6204618 is not associated with a WML instance","more_info":"https://cloud.ibm.com/apidocs/watsonx-ai#list-foundation-model-specs"}],"trace":"7012439fe6fc85064e677219226ea225","status_code":403}
 Traceback (most recent call last):
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 105, in _get_spec
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 105, in _get_spec
     return self._get_with_or_without_limit(
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/wml_resource.py", line 823, in _get_with_or_without_limit
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/wml_resource.py", line 823, in _get_with_or_without_limit
     result = self._handle_response(
              ^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/wml_resource.py", line 197, in _handle_response
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/wml_resource.py", line 197, in _handle_response
     raise ApiRequestFailure(
 ibm_watsonx_ai.wml_client_error.ApiRequestFailure: Failure during Get available foundation models. (GET https://us-south.ml.cloud.ibm.com/ml/v1/foundation_model_specs?version=2026-04-20&project_id=b377fbe0-52bd-4020-b4c0-d2c7c6204618&filters=%21lifecycle_withdrawn&limit=200)
 Status code: 403, body: {"errors":[{"code":"no_associated_service_instance_error","message":"project_id b377fbe0-52bd-4020-b4c0-d2c7c6204618 is not associated with a WML instance","more_info":"https://cloud.ibm.com/apidocs/watsonx-ai#list-foundation-model-specs"}],"trace":"7012439fe6fc85064e677219226ea225","status_code":403}
@@ -44,21 +44,21 @@ During handling of the above exception, another exception occurred:
 
 Traceback (most recent call last):
   File "<string>", line 7, in <module>
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/model_inference.py", line 235, in __init__
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/model_inference.py", line 235, in __init__
     self._inference = FMModelInference(
                       ^^^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/fm_model_inference.py", line 70, in __init__
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/fm_model_inference.py", line 70, in __init__
     model_specs = cast(dict, self._client.foundation_models.get_model_specs())
                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 242, in get_model_specs
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 242, in get_model_specs
     return self._get_spec(
            ^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 116, in _get_spec
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models_manager.py", line 116, in _get_spec
     raise WMLClientError(
 ibm_watsonx_ai.wml_client_error.WMLClientError: Unable to get model specifications from url: https://us-south.ml.cloud.ibm.com
 Reason: Failure during Get available foundation models. (GET https://us-south.ml.cloud.ibm.com/ml/v1/foundation_model_specs?version=2026-04-20&project_id=b377fbe0-52bd-4020-b4c0-d2c7c6204618&filters=%21lifecycle_withdrawn&limit=200)
 Status code: 403, body: {"errors":[{"code":"no_associated_service_instance_error","message":"project_id b377fbe0-52bd-4020-b4c0-d2c7c6204618 is not associated with a WML instance","more_info":"https://cloud.ibm.com/apidocs/watsonx-ai#list-foundation-model-specs"}],"trace":"7012439fe6fc85064e677219226ea225","status_code":403}
-(venv) anjalikulthe@Mac Ecstasy % python3 -c "
+(venv) adityakulthe@Mac Ecstasy % python3 -c "
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -74,19 +74,19 @@ print(model.generate_text('Say hello in one sentence.'))
 Model 'ibm/granite-3-8b-instruct' is not supported for this environment. Supported models: ['cross-encoder/ms-marco-minilm-l-12-v2', 'ibm/granite-3-1-8b-base', 'ibm/granite-4-h-small', 'ibm/granite-8b-code-instruct', 'ibm/granite-embedding-278m-multilingual', 'ibm/granite-guardian-3-8b', 'ibm/granite-ttm-1024-96-r2', 'ibm/granite-ttm-1536-96-r2', 'ibm/granite-ttm-512-96-r2', 'ibm/slate-125m-english-rtrvr-v2', 'ibm/slate-30m-english-rtrvr-v2', 'intfloat/multilingual-e5-large', 'meta-llama/llama-3-1-70b-gptq', 'meta-llama/llama-3-1-8b', 'meta-llama/llama-3-2-11b-vision-instruct', 'meta-llama/llama-3-3-70b-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct-fp8', 'meta-llama/llama-guard-3-11b-vision', 'mistral-large-2512', 'mistralai/mistral-medium-2505', 'mistralai/mistral-small-3-1-24b-instruct-2503', 'openai/gpt-oss-120b', 'sentence-transformers/all-minilm-l6-v2']
 Traceback (most recent call last):
   File "<string>", line 7, in <module>
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/model_inference.py", line 235, in __init__
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/model_inference.py", line 235, in __init__
     self._inference = FMModelInference(
                       ^^^^^^^^^^^^^^^^^
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/fm_model_inference.py", line 90, in __init__
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/venv/lib/python3.11/site-packages/ibm_watsonx_ai/foundation_models/inference/fm_model_inference.py", line 90, in __init__
     raise WMLClientError(
 ibm_watsonx_ai.wml_client_error.WMLClientError: Model 'ibm/granite-3-8b-instruct' is not supported for this environment. Supported models: ['cross-encoder/ms-marco-minilm-l-12-v2', 'ibm/granite-3-1-8b-base', 'ibm/granite-4-h-small', 'ibm/granite-8b-code-instruct', 'ibm/granite-embedding-278m-multilingual', 'ibm/granite-guardian-3-8b', 'ibm/granite-ttm-1024-96-r2', 'ibm/granite-ttm-1536-96-r2', 'ibm/granite-ttm-512-96-r2', 'ibm/slate-125m-english-rtrvr-v2', 'ibm/slate-30m-english-rtrvr-v2', 'intfloat/multilingual-e5-large', 'meta-llama/llama-3-1-70b-gptq', 'meta-llama/llama-3-1-8b', 'meta-llama/llama-3-2-11b-vision-instruct', 'meta-llama/llama-3-3-70b-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct-fp8', 'meta-llama/llama-guard-3-11b-vision', 'mistral-large-2512', 'mistralai/mistral-medium-2505', 'mistralai/mistral-small-3-1-24b-instruct-2503', 'openai/gpt-oss-120b', 'sentence-transformers/all-minilm-l6-v2']
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % python3 -c "
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % python3 -c "
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -101,11 +101,11 @@ model = ModelInference(
 print(model.generate_text('Say hello and describe what you can do in 2 sentences.'))
 "
 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % python3 -c "
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % python3 -c "
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -126,10 +126,10 @@ response = model.chat(messages=messages)
 print(response['choices'][0]['message']['content'])
 "
 Hello! I am an AI designed to assist users with their inquiries and tasks, possessing extensive knowledge and capabilities in natural language processing, data analysis, and problem-solving.
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % cat > agents/ir_architect.py << 'EOF'
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % cat > agents/ir_architect.py << 'EOF'
 import os
 from dotenv import load_dotenv
 from ibm_watsonx_ai import Credentials
@@ -174,17 +174,17 @@ entry:
     print("\n=== GRANITE OUTPUT IR ===")
     print(run(test_ir))
 EOF
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
-(venv) anjalikulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
+(venv) adityakulthe@Mac Ecstasy % 
 
 
 Here's the complete task you can hand directly to your coder:
 
 🛠️ Task for Coder: Wire Up the AI Compiler Pipeline
 Context
-The project is an AI Compiler at /Users/anjalikulthe/Desktop/hackathon/Ecstasy. IBM Granite 4.0 (ibm/granite-4-h-small) is confirmed working via watsonx.ai. The .env file is set with valid credentials. agents/ir_architect.py is ready. Now we need to complete the pipeline.
+The project is an AI Compiler at /Users/adityakulthe/Desktop/hackathon/Ecstasy. IBM Granite 4.0 (ibm/granite-4-h-small) is confirmed working via watsonx.ai. The .env file is set with valid credentials. agents/ir_architect.py is ready. Now we need to complete the pipeline.
 
 Task 1 — Create agents/memory_sentinel.py
 Create this file from scratch:
@@ -285,7 +285,7 @@ python agents/memory_sentinel.py
 python agents/supervisor.py
 
 # Step 4 — Run full test suite
-cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy
+cd /Users/adityakulthe/Desktop/hackathon/Ecstasy
 pytest tests/ -v --tb=short 2>&1 | head -80
 Task 4 — Fix Any Test Failures
 If pytest fails, look at the error message and patch accordingly. The most likely issues are:
@@ -328,7 +328,7 @@ The following file patterns are excluded from code reviews:
 <name>🛠️ Advanced</name>
 
 
-# Current Workspace Directory (/Users/anjalikulthe/Desktop/hackathon/Ecstasy) Files
+# Current Workspace Directory (/Users/adityakulthe/Desktop/hackathon/Ecstasy) Files
 .env.example
 .gitignore
 CEGAR_PROTOCOL.md
@@ -838,7 +838,7 @@ Now let me compile this with clang -O3 to generate the IR and verify the call su
 **User:**
 
 [execute_command for 'cd tests/fixtures && clang -O3 -S -emit-llvm ipcp_example.c -o ipcp_example.ll && cat ipcp_example.ll'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 ; ModuleID = 'ipcp_example.c'
 source_filename = "ipcp_example.c"
@@ -1157,7 +1157,7 @@ Now compile each file separately and check if the call survives:
 **User:**
 
 [execute_command for 'cd tests/fixtures && clang -O3 -S -emit-llvm ipcp_file1.c -o ipcp_file1.ll && clang -O3 -S -emit-llvm ipcp_file2.c -o ipcp_file2.ll && echo "=== FILE 1 IR ===" && cat ipcp_file1.ll && echo -e "\n\n=== FILE 2 IR ===" && cat ipcp_file2.ll'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 === FILE 1 IR ===
 ; ModuleID = 'ipcp_file1.c'
@@ -1735,15 +1735,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Now let's test the demo to make sure it works:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python demo/ipcp_complete_demo.py</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python demo/ipcp_complete_demo.py</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python demo/ipcp_complete_demo.py'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python demo/ipcp_complete_demo.py'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 127
 Output:
 /bin/sh: python: command not found
@@ -1816,21 +1816,21 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **Assistant:**
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 demo/ipcp_complete_demo.py</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 demo/ipcp_complete_demo.py</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && python3 demo/ipcp_complete_demo.py'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && python3 demo/ipcp_complete_demo.py'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Command execution was not successful, inspect the cause and adjust as needed.
 Exit code: 1
 Output:
 Traceback (most recent call last):
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/demo/ipcp_complete_demo.py", line 20, in <module>
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/demo/ipcp_complete_demo.py", line 20, in <module>
     from agents.ir_architect import run as ir_architect_run
-  File "/Users/anjalikulthe/Desktop/hackathon/Ecstasy/agents/ir_architect.py", line 3, in <module>
+  File "/Users/adityakulthe/Desktop/hackathon/Ecstasy/agents/ir_architect.py", line 3, in <module>
     from ibm_watsonx_ai import Credentials
 ModuleNotFoundError: No module named 'ibm_watsonx_ai'
 
@@ -1904,15 +1904,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Need to activate the venv first:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && source venv/bin/activate && python3 demo/ipcp_complete_demo.py</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && source venv/bin/activate && python3 demo/ipcp_complete_demo.py</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && source venv/bin/activate && python3 demo/ipcp_complete_demo.py'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && source venv/bin/activate && python3 demo/ipcp_complete_demo.py'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 
 ======================================================================
@@ -4629,7 +4629,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 I'll commit and push all the changes to git:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
 
 - Created IPCP demo showing optimization clang -O3 misses
 - Added ipcp_file1.c, ipcp_file2.c, ipcp_combined.ll
@@ -4644,7 +4644,7 @@ I'll commit and push all the changes to git:
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
 
 - Created IPCP demo showing optimization clang -O3 misses
 - Added ipcp_file1.c, ipcp_file2.c, ipcp_combined.ll
@@ -4725,15 +4725,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **Assistant:**
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git status</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git status</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git status'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git status'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 On branch main
 Your branch is up to date with 'origin/main'.
@@ -4836,14 +4836,14 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **Assistant:**
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates" && git push</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates" && git push</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates" && git push'] Result:
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates" && git push'] Result:
 The user denied this operation and provided the following feedback:
 <feedback>
 did you check there is no api key is there
@@ -4918,15 +4918,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Good catch! Let me check for any API keys in the files:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && grep -r "WATSONX_APIKEY\|api_key\|apikey" --include="*.py" --include="*.md" --include="*.json" . | grep -v ".env" | grep -v "your-api-key" | grep -v "APIKEY=" | head -20</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && grep -r "WATSONX_APIKEY\|api_key\|apikey" --include="*.py" --include="*.md" --include="*.json" . | grep -v ".env" | grep -v "your-api-key" | grep -v "APIKEY=" | head -20</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && grep -r "WATSONX_APIKEY\|api_key\|apikey" --include="*.py" --include="*.md" --include="*.json" . | grep -v ".env" | grep -v "your-api-key" | grep -v "APIKEY=" | head -20'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && grep -r "WATSONX_APIKEY\|api_key\|apikey" --include="*.py" --include="*.md" --include="*.json" . | grep -v ".env" | grep -v "your-api-key" | grep -v "APIKEY=" | head -20'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 ./agents/supervisor.py:        if not self.api_key:
 ./agents/supervisor.py:        data = f"grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey={self.api_key}"
@@ -5005,15 +5005,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Good - no hardcoded API keys found. Let me also check the .env file is properly gitignored:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && cat .gitignore | grep -E "\.env$|\.env\b"</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && cat .gitignore | grep -E "\.env$|\.env\b"</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && cat .gitignore | grep -E "\.env$|\.env\b"'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && cat .gitignore | grep -E "\.env$|\.env\b"'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 .env
 .env.local
@@ -5089,15 +5089,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Perfect! `.env` is gitignored. Now let me verify the .env file won't be committed:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git status --ignored | grep -E "\.env$"</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git status --ignored | grep -E "\.env$"</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git status --ignored | grep -E "\.env$"'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git status --ignored | grep -E "\.env$"'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 	.env
 
@@ -5171,7 +5171,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Excellent! `.env` is properly ignored. Now let me commit and push safely:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
 
 - Created IPCP demo showing optimization clang -O3 misses
 - Added ipcp_file1.c, ipcp_file2.c, ipcp_combined.ll
@@ -5188,7 +5188,7 @@ Security: No API keys committed, .env properly gitignored" && git push</command>
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add -A && git commit -m "feat: Complete IPCP demonstration and README updates
 
 - Created IPCP demo showing optimization clang -O3 misses
 - Added ipcp_file1.c, ipcp_file2.c, ipcp_combined.ll
@@ -5199,7 +5199,7 @@ Security: No API keys committed, .env properly gitignored" && git push</command>
 - Ready for video recording and hackathon submission
 
 Security: No API keys committed, .env properly gitignored" && git push'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 [main 17d3bea] feat: Complete IPCP demonstration and README updates
  30 files changed, 3419 insertions(+), 163 deletions(-)
@@ -5797,7 +5797,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 Perfect! All 7 changes applied. Now let me commit and push:
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: Make README completely honest and defensible
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: Make README completely honest and defensible
 
 Changes per feedback:
 1. Removed judge quote claiming first place
@@ -5815,7 +5815,7 @@ Every claim now defensible. No misrepresentation." && git push</command>
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: Make README completely honest and defensible
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git add README.md && git commit -m "docs: Make README completely honest and defensible
 
 Changes per feedback:
 1. Removed judge quote claiming first place
@@ -5827,7 +5827,7 @@ Changes per feedback:
 7. Updated badge to reflect actual implementation
 
 Every claim now defensible. No misrepresentation." && git push'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 [main b24c7d6] docs: Make README completely honest and defensible
  1 file changed, 58 insertions(+), 25 deletions(-)
@@ -6037,15 +6037,15 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **Assistant:**
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git pull</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git pull</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && git pull'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && git pull'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 From github.com:adityakulthe/Ecstasy
    b24c7d6..a641316  main       -> origin/main
@@ -6270,20 +6270,20 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 **Assistant:**
 
 <execute_command>
-<command>cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && mkdir -p bob_report && echo "Bob Report folder created" && ls -la bob_report</command>
+<command>cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && mkdir -p bob_report && echo "Bob Report folder created" && ls -la bob_report</command>
 </execute_command>
 
 ---
 
 **User:**
 
-[execute_command for 'cd /Users/anjalikulthe/Desktop/hackathon/Ecstasy && mkdir -p bob_report && echo "Bob Report folder created" && ls -la bob_report'] Result:
-Command executed in terminal  within working directory '/Users/anjalikulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
+[execute_command for 'cd /Users/adityakulthe/Desktop/hackathon/Ecstasy && mkdir -p bob_report && echo "Bob Report folder created" && ls -la bob_report'] Result:
+Command executed in terminal  within working directory '/Users/adityakulthe/Desktop/hackathon/Ecstasy'. Exit code: 0
 Output:
 Bob Report folder created
 total 0
-drwxr-xr-x   2 anjalikulthe  staff    64 May  2 23:02 .
-drwxr-xr-x  35 anjalikulthe  staff  1120 May  2 23:02 ..
+drwxr-xr-x   2 adityakulthe  staff    64 May  2 23:02 .
+drwxr-xr-x  35 adityakulthe  staff  1120 May  2 23:02 ..
 
 <environment_details>
 # VSCode Visible Files
@@ -6357,7 +6357,7 @@ IMPORTANT: When task status changes, remember to call the `update_todo_list` too
 ✅ Created `bob_report/` folder successfully!
 
 ## Folder Created
-- **Path:** `/Users/anjalikulthe/Desktop/hackathon/Ecstasy/bob_report/`
+- **Path:** `/Users/adityakulthe/Desktop/hackathon/Ecstasy/bob_report/`
 - **Status:** Empty, ready for Bob IDE export files
 - **Purpose:** Store exported Bob conversation history and reports for hackathon submission
 

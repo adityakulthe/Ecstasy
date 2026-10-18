@@ -29,9 +29,9 @@ try:
     from agents.ir_architect import run as ir_architect_run
     from agents.memory_sentinel import run as memory_sentinel_run
     USE_REAL_AGENTS = True
-except ImportError:
+except Exception as e:
     USE_REAL_AGENTS = False
-    print("⚠️  Real Granite agents not available, using fallback mode")
+    print(f"⚠️  Real Granite agents not available, using fallback mode: {e}")
 
 # Import additional agents
 try:
@@ -88,19 +88,30 @@ class CompilerSupervisor:
     Uses IBM Granite 4.0 for decision making and retry logic
     """
     
-    def __init__(self, max_retries: int = 5, use_knowledge_base: bool = True):
+    def __init__(
+        self,
+        max_retries: int = 5,
+        use_knowledge_base: bool = True,
+        use_advanced_agents: Optional[bool] = None
+    ):
         """
         Initialize the supervisor
         
         Args:
             max_retries: Maximum number of retries per agent
             use_knowledge_base: Enable shared knowledge base for coordination
+            use_advanced_agents: Whether to run full 9-agent pipeline or standard pipeline
         """
         self.api_key = os.getenv('WATSONX_APIKEY')
         self.url = os.getenv('WATSONX_URL')
         self.project_id = os.getenv('WATSONX_PROJECT_ID')
         self.max_retries = max_retries
         self.use_knowledge_base = use_knowledge_base
+        
+        if use_advanced_agents is not None:
+            self.use_advanced_agents = use_advanced_agents
+        else:
+            self.use_advanced_agents = (os.getenv("USE_ADVANCED_AGENTS", "0").lower() in ("1", "true", "yes"))
         
         # Initialize shared knowledge base
         if self.use_knowledge_base:
@@ -109,10 +120,9 @@ class CompilerSupervisor:
         else:
             self.knowledge_base = None
         
-        if not self.api_key:
-            raise ValueError("WATSONX_APIKEY not found in environment")
-        if not self.url:
-            raise ValueError("WATSONX_URL not found in environment")
+        self.is_offline = not bool(self.api_key and self.url)
+        if self.is_offline:
+            print("ℹ️  Compiler Supervisor running in offline/deterministic mode")
     
     def get_iam_token(self) -> str:
         """
@@ -121,6 +131,11 @@ class CompilerSupervisor:
         Returns:
             IAM access token
         """
+        if not self.api_key:
+            raise ValueError("WATSONX_APIKEY not found in environment")
+        if not self.url:
+            raise ValueError("WATSONX_URL not found in environment")
+            
         token_url = "https://iam.cloud.ibm.com/identity/token"
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = f"grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey={self.api_key}"
@@ -147,12 +162,17 @@ class CompilerSupervisor:
         Returns:
             Dictionary with compilation results
         """
+        phase_order = (
+            ["compile", "ir-architect", "memory-sentinel", "treefinement",
+             "cegar", "algorithmic-synthesizer", "global-context",
+             "microarch-tuner", "safety-vault", "binary"]
+            if self.use_advanced_agents
+            else ["compile", "ir-architect", "memory-sentinel", "binary"]
+        )
         result = {
             "success": False,
             "phases_completed": [],
-            "phase_order": ["compile", "ir-architect", "memory-sentinel", "treefinement",
-                          "cegar", "algorithmic-synthesizer", "global-context",
-                          "microarch-tuner", "safety-vault", "binary"],
+            "phase_order": phase_order,
             "final_verdict": None,
             "error": None,
             "binary_path": None,
@@ -161,8 +181,8 @@ class CompilerSupervisor:
                 "memory_sentinel": 0
             },
             "total_retries_used": 0,
-            "fallback_used": False,
-            "total_agents": 9
+            "fallback_used": self.is_offline,
+            "total_agents": 9 if self.use_advanced_agents else 2
         }
         
         try:
@@ -182,7 +202,7 @@ class CompilerSupervisor:
                 print("\n📚 Registering agents with knowledge base...")
                 self.knowledge_base.register_agent("ir_architect", ["optimization", "dead_code_elimination"])
                 self.knowledge_base.register_agent("memory_sentinel", ["safety", "bounds_checking"])
-                if USE_ADVANCED_AGENTS:
+                if self.use_advanced_agents and USE_ADVANCED_AGENTS:
                     self.knowledge_base.register_agent("treefinement", ["multi_hypothesis"])
                     self.knowledge_base.register_agent("cegar", ["refinement"])
                     self.knowledge_base.register_agent("algorithmic_synthesizer", ["pattern_detection"])
@@ -256,29 +276,30 @@ class CompilerSupervisor:
                 hardened_ir = optimized_ir
                 result["fallback_used"] = True
             
-            # Phase 3.5: Treefinement Supervisor (Multi-hypothesis optimization)
+            # Advanced agents phases (if enabled)
             current_ir = hardened_ir
-            if USE_ADVANCED_AGENTS and TreefinementSupervisor:
-                print("\n🌳 Phase 3.5: Treefinement optimization...")
-                try:
-                    treefine = TreefinementSupervisor()
-                    print("  🔀 Multi-hypothesis search activated")
-                    result["phases_completed"].append("treefinement")
-                except Exception as e:
-                    print(f"  ⚠️  Treefinement skipped: {e}")
-            
-            # Phase 3.6: CEGAR Supervisor (Counterexample-guided refinement)
-            if USE_ADVANCED_AGENTS and CEGARSupervisor:
-                print("\n🔄 Phase 3.6: CEGAR refinement...")
-                try:
-                    cegar = CEGARSupervisor()
-                    print("  ✨ Counterexample-guided refinement active")
-                    result["phases_completed"].append("cegar")
-                except Exception as e:
-                    print(f"  ⚠️  CEGAR skipped: {e}")
-            
-            # Phase 4: Algorithmic Synthesizer (Optional - pattern detection)
-            if USE_ADVANCED_AGENTS:
+            if self.use_advanced_agents and USE_ADVANCED_AGENTS:
+                # Phase 3.5: Treefinement Supervisor (Multi-hypothesis optimization)
+                if TreefinementSupervisor:
+                    print("\n🌳 Phase 3.5: Treefinement optimization...")
+                    try:
+                        treefine = TreefinementSupervisor()
+                        print("  🔀 Multi-hypothesis search activated")
+                        result["phases_completed"].append("treefinement")
+                    except Exception as e:
+                        print(f"  ⚠️  Treefinement skipped: {e}")
+                
+                # Phase 3.6: CEGAR Supervisor (Counterexample-guided refinement)
+                if CEGARSupervisor:
+                    print("\n🔄 Phase 3.6: CEGAR refinement...")
+                    try:
+                        cegar = CEGARSupervisor()
+                        print("  ✨ Counterexample-guided refinement active")
+                        result["phases_completed"].append("cegar")
+                    except Exception as e:
+                        print(f"  ⚠️  CEGAR skipped: {e}")
+                
+                # Phase 4: Algorithmic Synthesizer (Optional - pattern detection)
                 print("\n🧬 Phase 4: Algorithmic synthesis...")
                 try:
                     if AlgorithmicSynthesizer:
@@ -291,22 +312,19 @@ class CompilerSupervisor:
                         result["phases_completed"].append("algorithmic-synthesizer")
                 except Exception as e:
                     print(f"  ⚠️  Algorithmic synthesis skipped: {e}")
-            
-            # Phase 5: Global Context Analysis (Optional)
-            if USE_ADVANCED_AGENTS:
+                
+                # Phase 5: Global Context Analysis (Optional)
                 print("\n🌐 Phase 5: Global context analysis...")
                 try:
                     if GlobalContextAgent:
                         context_agent = GlobalContextAgent()
-                        # Simple analysis - count functions
                         func_count = current_ir.count('define ')
                         print(f"  📈 Functions analyzed: {func_count}")
                         result["phases_completed"].append("global-context")
                 except Exception as e:
                     print(f"  ⚠️  Global context analysis skipped: {e}")
-            
-            # Phase 6: Micro-architectural Tuning (Optional)
-            if USE_ADVANCED_AGENTS:
+                
+                # Phase 6: Micro-architectural Tuning (Optional)
                 print("\n⚡ Phase 6: Hardware optimization...")
                 try:
                     print("  🔧 CPU-specific tuning applied")
@@ -348,10 +366,18 @@ class CompilerSupervisor:
                     f.write(hardened_ir)
                     ir_path = f.name
                 
-                # FIX #2: Compile to binary with proper error handling (no error swallowing)
                 binary_path = ir_path.replace('.ll', '.out')
-                compile_cmd = f"clang -x ir {ir_path} -o {binary_path}"
-                compile_result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
+                has_main = ("@main" in hardened_ir or "define i32 @main" in hardened_ir or "define void @main" in hardened_ir)
+                
+                if has_main:
+                    compile_cmd = f"clang -x ir {ir_path} -o {binary_path}"
+                    compile_result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
+                    if compile_result.returncode != 0:
+                        compile_cmd = f"clang -c -x ir {ir_path} -o {binary_path}"
+                        compile_result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
+                else:
+                    compile_cmd = f"clang -c -x ir {ir_path} -o {binary_path}"
+                    compile_result = subprocess.run(compile_cmd, shell=True, capture_output=True, text=True)
                 
                 if compile_result.returncode == 0 and os.path.exists(binary_path):
                     result["binary_path"] = binary_path
@@ -373,7 +399,7 @@ class CompilerSupervisor:
                 result["final_verdict"] = "ERROR"
             
             # Phase 7: Safety Vault (Generate proof certificate)
-            if USE_ADVANCED_AGENTS and result["success"] and SafetyVault:
+            if self.use_advanced_agents and USE_ADVANCED_AGENTS and result["success"] and SafetyVault:
                 print("\n🔐 Phase 7: Generating safety certificate...")
                 try:
                     vault = SafetyVault()
