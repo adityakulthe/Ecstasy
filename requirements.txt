@@ -15,3 +15,6 @@ anyio>=4.0.0
 # Server & MCP Protocol
 fastmcp>=0.1.0
 pydantic>=2.0.0
+
+# Formal Verification (SMT Solver)
+z3-solver>=5.0.0
