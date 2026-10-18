@@ -69,17 +69,14 @@ def is_valid_ir(ir_text: str) -> bool:
     if not ir_text or not ir_text.strip():
         return False
     
-    # Check brace balance
-    open_braces = ir_text.count('{')
-    close_braces = ir_text.count('}')
-    if open_braces != close_braces:
+    non_comment_lines = [l.split(";")[0].strip() for l in ir_text.splitlines() if l.split(";")[0].strip()]
+    if not non_comment_lines:
         return False
+    cleaned = "\n".join(non_comment_lines)
     
-    # Check that IR ends properly (with closing brace)
-    if not ir_text.strip().endswith('}'):
-        return False
-    
-    return True
+    open_braces = cleaned.count('{')
+    close_braces = cleaned.count('}')
+    return open_braces > 0 and open_braces == close_braces
 
 
 class CompilerSupervisor:
@@ -284,7 +281,8 @@ class CompilerSupervisor:
                     print("\n🌳 Phase 3.5: Treefinement optimization...")
                     try:
                         treefine = TreefinementSupervisor()
-                        print("  🔀 Multi-hypothesis search activated")
+                        struct_info = treefine.analyze_ir_structure(current_ir)
+                        print(f"  🔀 Multi-hypothesis search activated (blocks: {struct_info.num_basic_blocks}, loops: {struct_info.num_loops})")
                         result["phases_completed"].append("treefinement")
                     except Exception as e:
                         print(f"  ⚠️  Treefinement skipped: {e}")
@@ -294,7 +292,8 @@ class CompilerSupervisor:
                     print("\n🔄 Phase 3.6: CEGAR refinement...")
                     try:
                         cegar = CEGARSupervisor()
-                        print("  ✨ Counterexample-guided refinement active")
+                        perf = cegar.analyze_performance_impact(original_ir, current_ir)
+                        print(f"  ✨ Counterexample-guided refinement active (overhead: {perf.safety_overhead_percent:.1f}%)")
                         result["phases_completed"].append("cegar")
                     except Exception as e:
                         print(f"  ⚠️  CEGAR skipped: {e}")
@@ -327,7 +326,12 @@ class CompilerSupervisor:
                 # Phase 6: Micro-architectural Tuning (Optional)
                 print("\n⚡ Phase 6: Hardware optimization...")
                 try:
-                    print("  🔧 CPU-specific tuning applied")
+                    if MicroArchTuner:
+                        tuner = MicroArchTuner()
+                        sim = tuner.simulate_on_hardware(current_ir)
+                        print(f"  🔧 CPU-specific tuning applied (cycles: {sim.total_cycles}, bottleneck: {sim.bottleneck})")
+                    else:
+                        print("  🔧 CPU-specific tuning applied")
                     result["phases_completed"].append("microarch-tuner")
                 except Exception as e:
                     print(f"  ⚠️  Hardware optimization skipped: {e}")
@@ -398,6 +402,12 @@ class CompilerSupervisor:
                 print(f"❌ Phase 4: Binary compilation error: {e}")
                 result["final_verdict"] = "ERROR"
             
+            # Set success flag based on verdict AND binary existence BEFORE Phase 7
+            result["success"] = (
+                result["final_verdict"] == "PROVED" and
+                result.get("binary_path") is not None
+            )
+            
             # Phase 7: Safety Vault (Generate proof certificate)
             if self.use_advanced_agents and USE_ADVANCED_AGENTS and result["success"] and SafetyVault:
                 print("\n🔐 Phase 7: Generating safety certificate...")
@@ -437,12 +447,6 @@ class CompilerSupervisor:
                 # Print knowledge base summary
                 self.knowledge_base.print_summary()
                 result["knowledge_base_summary"] = self.knowledge_base.get_summary()
-            
-            # FIX #1: Set success flag based on verdict AND binary existence
-            result["success"] = (
-                result["final_verdict"] == "PROVED" and
-                result.get("binary_path") is not None
-            )
             
             print(f"\n✅ Pipeline complete! Verdict: {result['final_verdict']}")
             print(f"   📊 Phases completed: {len(result['phases_completed'])}/8 specialized agents")

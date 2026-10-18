@@ -137,8 +137,8 @@ class GlobalContextAgent:
     
     def _extract_functions(self, ir_code: str, file_path: str):
         """Extract function signatures from IR"""
-        # Pattern: define <return_type> @<name>(<params>)
-        pattern = r'define\s+(\S+)\s+@(\w+)\s*\(([^)]*)\)'
+        # Pattern: define [qualifiers] <return_type> @<name>(<params>)
+        pattern = r'define\s+(?:[\w]+\s+)*?([\w*]+)\s+@([\w.]+)\s*\(([^)]*)\)'
         
         for match in re.finditer(pattern, ir_code):
             return_type = match.group(1)
@@ -182,14 +182,14 @@ class GlobalContextAgent:
     
     def _extract_call_sites(self, ir_code: str, file_path: str):
         """Extract function call sites from IR"""
-        # Pattern: call <type> @<function>(<args>)
-        pattern = r'call\s+\S+\s+@(\w+)\s*\(([^)]*)\)'
+        # Pattern: call [qualifiers] <type> @<function>(<args>)
+        pattern = r'call\s+(?:[\w]+\s+)*?[\w*]+\s+@([\w.]+)\s*\(([^)]*)\)'
         
         current_function = None
         
         for line in ir_code.split('\n'):
             # Track current function
-            func_match = re.search(r'define\s+\S+\s+@(\w+)', line)
+            func_match = re.search(r'define\s+(?:[\w]+\s+)*?[\w*]+\s+@([\w.]+)', line)
             if func_match:
                 current_function = func_match.group(1)
             
@@ -215,18 +215,19 @@ class GlobalContextAgent:
                 )
                 
                 self.context.call_sites.append(call_site)
-                
-                # Update call count
-                if callee in self.context.functions:
-                    self.context.functions[callee].call_count += 1
     
     def _build_call_graph(self):
-        """Build call graph from call sites"""
+        """Build call graph and compute accurate cross-file call counts"""
+        for func_sig in self.context.functions.values():
+            func_sig.call_count = 0
+
         for call_site in self.context.call_sites:
             if call_site.caller not in self.context.call_graph:
                 self.context.call_graph[call_site.caller] = set()
             
             self.context.call_graph[call_site.caller].add(call_site.callee)
+            if call_site.callee in self.context.functions:
+                self.context.functions[call_site.callee].call_count += 1
     
     def _find_optimization_opportunities(self):
         """Find inter-procedural optimization opportunities"""
@@ -235,21 +236,27 @@ class GlobalContextAgent:
             # Check if any arguments are constants
             for i, arg in enumerate(call_site.arguments):
                 if self._is_constant(arg):
+                    tokens = arg.strip().split()
+                    const_val = tokens[-1] if tokens else arg
                     opportunity = {
                         "type": "constant_propagation",
                         "caller": call_site.caller,
                         "callee": call_site.callee,
                         "argument_index": i,
-                        "constant_value": arg,
+                        "constant_value": const_val,
                         "location": call_site.location
                     }
                     self.context.constant_propagation_opportunities.append(opportunity)
                     self.optimizations_found += 1
     
     def _is_constant(self, value: str) -> bool:
-        """Check if a value is a constant"""
-        # Check for numeric constants
-        if re.match(r'^-?\d+$', value.strip()):
+        """Check if an LLVM IR argument value is a constant (e.g. '5' or 'i32 noundef 5')"""
+        tokens = value.strip().split()
+        if not tokens:
+            return False
+        last_tok = tokens[-1]
+        # Check for numeric constants (integer or float literal) or boolean constants
+        if re.match(r'^-?\d+(\.\d+)?$', last_tok) or last_tok in ("true", "false", "null"):
             return True
         
         # Check for constant globals
@@ -306,9 +313,9 @@ class GlobalContextAgent:
         # 1. Constant propagation (already found)
         opportunities.extend(self.context.constant_propagation_opportunities)
         
-        # 2. Dead function elimination
+        # 2. Dead function elimination (never eliminate program entry point 'main')
         for func_name, func_sig in self.context.functions.items():
-            if func_sig.call_count == 0 and not func_sig.is_external:
+            if func_sig.call_count == 0 and not func_sig.is_external and func_name != "main":
                 opportunities.append({
                     "type": "dead_function_elimination",
                     "function": func_name,

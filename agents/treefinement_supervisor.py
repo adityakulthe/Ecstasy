@@ -201,107 +201,64 @@ Path C: Memory Safety Hardening
         self.total_hypotheses_generated += 3
         return hypotheses
     
-    def _apply_vectorization_pass(self, ir_code: str) -> str:
-        """Apply vectorization optimization using LLVM opt"""
+    def _find_opt_binary(self) -> Optional[str]:
+        """Locate LLVM opt binary in PATH or Homebrew installations."""
+        import shutil
+        opt_bin = shutil.which('opt')
+        if opt_bin:
+            return opt_bin
+        for candidate in ['/opt/homebrew/opt/llvm/bin/opt', '/usr/local/opt/llvm/bin/opt', '/usr/bin/opt']:
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _run_opt_pass(self, ir_code: str, passes: str, extra_flags: Optional[List[str]] = None) -> str:
+        """Run an LLVM opt pass safely with optnone stripping and guaranteed temp-file cleanup."""
+        import re
+        opt_bin = self._find_opt_binary()
+        if not opt_bin:
+            return ir_code
+
+        sanitized_ir = re.sub(r'\boptnone\b', '', ir_code)
+        input_path = None
+        output_path = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', suffix='.ll', delete=False) as f:
-                f.write(ir_code)
+                f.write(sanitized_ir)
                 input_path = f.name
-            
-            output_path = input_path.replace('.ll', '_vec.ll')
-            
-            # LLVM 22/23 vectorization with wide lane masks
-            cmd = [
-                'opt',
-                '-passes=loop-unroll,slp-vectorizer',
-                '-enable-wide-lane-mask',
-                '-S',
-                input_path,
-                '-o', output_path
-            ]
-            
+            output_path = input_path.replace('.ll', '_opt.ll')
+            cmd = [opt_bin, f'-passes={passes}']
+            if extra_flags:
+                cmd.extend(extra_flags)
+            cmd.extend(['-S', input_path, '-o', output_path])
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
             if result.returncode == 0 and os.path.exists(output_path):
-                with open(output_path, 'r') as f:
-                    optimized = f.read()
-                os.unlink(input_path)
-                os.unlink(output_path)
-                return optimized
-            else:
-                os.unlink(input_path)
-                return ir_code
-                
+                with open(output_path, 'r') as f_out:
+                    return f_out.read()
         except Exception as e:
-            print(f"   ⚠️  Vectorization pass failed: {e}")
-            return ir_code
+            print(f"   ⚠️  Pass ({passes}) failed: {e}")
+        finally:
+            for p in (input_path, output_path):
+                if p and os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+        return ir_code
+
+    def _apply_vectorization_pass(self, ir_code: str) -> str:
+        """Apply vectorization optimization using LLVM opt"""
+        return self._run_opt_pass(ir_code, 'loop-unroll,slp-vectorizer')
     
     def _apply_inlining_pass(self, ir_code: str) -> str:
         """Apply aggressive inlining optimization"""
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ll', delete=False) as f:
-                f.write(ir_code)
-                input_path = f.name
-            
-            output_path = input_path.replace('.ll', '_inline.ll')
-            
-            cmd = [
-                'opt',
-                '-passes=inline,always-inline',
-                '-S',
-                input_path,
-                '-o', output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(output_path):
-                with open(output_path, 'r') as f:
-                    optimized = f.read()
-                os.unlink(input_path)
-                os.unlink(output_path)
-                return optimized
-            else:
-                os.unlink(input_path)
-                return ir_code
-                
-        except Exception as e:
-            print(f"   ⚠️  Inlining pass failed: {e}")
-            return ir_code
+        return self._run_opt_pass(ir_code, 'inline,always-inline')
     
     def _apply_memory_hardening(self, ir_code: str) -> str:
         """Apply memory safety hardening"""
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ll', delete=False) as f:
-                f.write(ir_code)
-                input_path = f.name
-            
-            output_path = input_path.replace('.ll', '_safe.ll')
-            
-            # Use AddressSanitizer instrumentation
-            cmd = [
-                'opt',
-                '-passes=asan',
-                '-S',
-                input_path,
-                '-o', output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
-            if result.returncode == 0 and os.path.exists(output_path):
-                with open(output_path, 'r') as f:
-                    hardened = f.read()
-                os.unlink(input_path)
-                os.unlink(output_path)
-                return hardened
-            else:
-                os.unlink(input_path)
-                return ir_code
-                
-        except Exception as e:
-            print(f"   ⚠️  Memory hardening failed: {e}")
-            return ir_code
+        from server.mcp_server import apply_memory_safety
+        hardened = apply_memory_safety(ir_code, use_ai=False)
+        return hardened.get("hardened_ir", ir_code)
     
     def analyze_z3_counterexample(self, counterexample: str) -> Dict[str, Any]:
         """
@@ -529,7 +486,7 @@ Path C: Memory Safety Hardening
                 )
                 
                 result["final_verdict"] = validation["verdict"]
-                result["success"] = True
+                result["success"] = (validation["verdict"] == "PROVED")
                 
                 # Cleanup
                 try:
