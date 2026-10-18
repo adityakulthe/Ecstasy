@@ -7,6 +7,7 @@ Command-line interface for compiling, optimizing, verifying, and securing C and 
 import sys
 import os
 import time
+import json
 import argparse
 from pathlib import Path
 
@@ -65,7 +66,7 @@ def cmd_compile(args):
         shutil.copy(result["binary_path"], out_bin)
         print(f"Output Binary: {out_bin}")
 
-    if args.cert:
+    if args.cert or args.html:
         vault = SafetyVault()
         cert = vault.generate_certificate(
             project_name=source_path.stem,
@@ -78,7 +79,119 @@ def cmd_compile(args):
         vault.export_certificate(cert, str(cert_path))
         print(f"Proof Cert:    {cert_path} (ID: {cert.certificate_id})")
 
+        if args.html:
+            html_path = Path(args.html) if isinstance(args.html, str) and args.html != "True" else source_path.with_suffix(".proof.html")
+            vault.export_html_report(cert, str(html_path))
+            print(f"HTML Report:   {html_path}")
+
+    if args.report:
+        report_path = Path(args.report)
+        report_payload = {
+            "source": str(source_path),
+            "status": "SUCCESS" if result.get("success") else "FAILED",
+            "verdict": result.get("final_verdict", "UNKNOWN"),
+            "phases_completed": result.get("phases_completed", []),
+            "retries_used": result.get("total_retries_used", 0),
+            "elapsed_seconds": round(elapsed, 3),
+            "binary_path": result.get("binary_path")
+        }
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report_payload, f, indent=2)
+        print(f"JSON Report:   {report_path}")
+
     print("=" * 65)
+
+
+def cmd_audit(args):
+    target_dir = Path(args.path)
+    if not target_dir.exists():
+        print(f"❌ Error: Path not found: {target_dir}")
+        sys.exit(1)
+
+    extensions = {".c", ".cpp", ".cc", ".cxx", ".ll"}
+    if target_dir.is_file():
+        files = [target_dir]
+    else:
+        files = sorted([p for p in target_dir.rglob("*") if p.suffix.lower() in extensions and not p.name.startswith(".")])
+
+    if not files:
+        print(f"ℹ️  No C/C++ or LLVM IR files found in: {target_dir}")
+        sys.exit(0)
+
+    print("\n" + "=" * 75)
+    print(f"🛡️  ECSTASY SECURITY & MEMORY SAFETY AUDIT")
+    print(f"📁 Target Scope: {target_dir} ({len(files)} file(s))")
+    print("=" * 75)
+
+    from server.mcp_server import apply_memory_safety
+
+    audit_records = []
+    total_checks = 0
+    total_vulnerable = 0
+
+    print(f"{'FILE':<35} | {'CHECKS':<8} | {'STATUS':<10} | {'FINDINGS'}")
+    print("-" * 75)
+
+    for fpath in files:
+        rel_name = str(fpath.relative_to(target_dir)) if target_dir.is_dir() else fpath.name
+        if len(rel_name) > 34:
+            disp_name = "..." + rel_name[-31:]
+        else:
+            disp_name = rel_name
+
+        try:
+            content = fpath.read_text(errors="ignore")
+            if fpath.suffix.lower() in {".c", ".cpp", ".cc", ".cxx"}:
+                compile_res = compile_to_ir(content, fpath.name)
+                ir_code = compile_res.get("ir", "") if compile_res["success"] else ""
+            else:
+                ir_code = content
+
+            if not ir_code:
+                print(f"{disp_name:<35} | {'0':<8} | {'⚠️ SKIP':<10} | Syntax or compile error")
+                continue
+
+            res = apply_memory_safety(ir_code, use_ai=not args.offline, verbose=False)
+            checks = res.get("checks_added", 0)
+            total_checks += checks
+
+            if checks > 0:
+                total_vulnerable += 1
+                status = "🔴 HARDEN"
+                findings = "; ".join(res.get("check_locations", []))[:30]
+            else:
+                status = "🟢 CLEAN"
+                findings = "No memory vulnerabilities"
+
+            print(f"{disp_name:<35} | {checks:<8} | {status:<10} | {findings}")
+
+            audit_records.append({
+                "file": str(fpath),
+                "checks_injected": checks,
+                "status": "hardened" if checks > 0 else "clean",
+                "findings": res.get("check_locations", [])
+            })
+        except Exception as e:
+            print(f"{disp_name:<35} | {'0':<8} | {'❌ ERROR':<10} | {str(e)[:30]}")
+
+    print("-" * 75)
+    print(f"Audit Summary: {len(files)} files scanned | {total_vulnerable} vulnerable | {total_checks} guards injected")
+    print("=" * 75)
+
+    if args.report:
+        report_p = Path(args.report)
+        from datetime import datetime
+        report_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "scope": str(target_dir),
+            "files_scanned": len(files),
+            "vulnerable_files": total_vulnerable,
+            "guards_injected": total_checks,
+            "records": audit_records
+        }
+        with open(report_p, "w", encoding="utf-8") as f:
+            json.dump(report_data, f, indent=2)
+        print(f"📄 Audit report exported to: {report_p}")
 
 
 def cmd_verify(args):
@@ -283,6 +396,8 @@ def main():
     compile_p.add_argument("--retries", type=int, default=3, help="Max AI retry budget")
     compile_p.add_argument("--advanced", action="store_true", help="Enable 9-agent pipeline")
     compile_p.add_argument("--cert", action="store_true", help="Generate cryptographic proof certificate")
+    compile_p.add_argument("--html", nargs="?", const="True", help="Export executive HTML attestation report")
+    compile_p.add_argument("--report", help="Export full compilation audit report as JSON")
 
     # verify
     verify_p = subparsers.add_parser("verify", help="Formally verify semantic equivalence between two LLVM IR files")
@@ -300,6 +415,12 @@ def main():
     mem_p.add_argument("target", help="Path to C (.c) or LLVM IR (.ll) file")
     mem_p.add_argument("-o", "--output", help="Optional path to output hardened IR")
     mem_p.add_argument("--offline", action="store_true", help="Run deterministic checks without cloud AI")
+
+    # audit
+    audit_p = subparsers.add_parser("audit", help="Audit an entire directory or project for memory vulnerabilities")
+    audit_p.add_argument("path", help="Directory path to recursively scan and audit")
+    audit_p.add_argument("--report", help="Export audit findings to JSON report file")
+    audit_p.add_argument("--offline", action="store_true", help="Run deterministic checks without cloud AI")
 
     # doctor
     subparsers.add_parser("doctor", help="Run system and toolchain diagnostic checks")
@@ -327,6 +448,8 @@ def main():
         cmd_verify_cert(args)
     elif args.command == "check-memory":
         cmd_check_memory(args)
+    elif args.command == "audit":
+        cmd_audit(args)
     elif args.command == "doctor":
         cmd_doctor(args)
     elif args.command == "demo":

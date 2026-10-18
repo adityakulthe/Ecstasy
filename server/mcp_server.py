@@ -40,9 +40,12 @@ def compile_to_ir(c_source: str, filename: str) -> Dict[str, Any]:
         os.close(ir_fd)
         
         try:
-            # Compile to IR with -O0 (no optimization)
+            # Select appropriate compiler frontend (clang++ for C++, clang for C)
+            import shutil
+            is_cpp = clean_suffix in ('.cpp', '.cc', '.cxx', '.hpp', '.hxx')
+            compiler_bin = (shutil.which('clang++') or 'clang++') if is_cpp else (shutil.which('clang') or 'clang')
             cmd = [
-                'clang',
+                compiler_bin,
                 '-S',  # Generate assembly (IR in this case)
                 '-emit-llvm',  # Emit LLVM IR instead of native assembly
                 '-O0',  # No optimization
@@ -57,17 +60,17 @@ def compile_to_ir(c_source: str, filename: str) -> Dict[str, Any]:
                 timeout=30
             )
             
-            # Read the generated IR
-            with open(ir_path, 'r') as f:
-                ir_code = f.read()
-            
-            # Check for errors
+            # Check for errors before reading file
             if result.returncode != 0:
                 return {
                     'success': False,
                     'error': result.stderr,
                     'warnings': result.stdout
                 }
+            
+            # Read the generated IR
+            with open(ir_path, 'r') as f:
+                ir_code = f.read()
             
             return {
                 'success': True,
@@ -271,13 +274,14 @@ def _finalize_optimization(original_ir: str, optimized_ir: str, transformation_a
     }
 
 
-def apply_memory_safety(ir_code: str, use_ai: bool = True) -> Dict[str, Any]:
+def apply_memory_safety(ir_code: str, use_ai: bool = True, verbose: bool = True) -> Dict[str, Any]:
     """
     Apply memory safety hardening using AI (@memory-sentinel).
     
     Args:
         ir_code: LLVM IR code to harden
         use_ai: Whether to use AI hardening (default: True)
+        verbose: Whether to print progress messages (default: True)
         
     Returns:
         Dictionary with:
@@ -299,7 +303,8 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True) -> Dict[str, Any]:
                 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
                 from agents.granite_direct import GraniteDirectAgent
                 
-                print("🛡️  Calling @memory-sentinel for safety hardening...")
+                if verbose:
+                    print("🛡️  Calling @memory-sentinel for safety hardening...")
                 agent = GraniteDirectAgent()
                 result = agent.memory_sentinel(ir_code)
                 
@@ -308,13 +313,16 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True) -> Dict[str, Any]:
                     checks_added = result.get('checks_added', 0)
                     check_locations = result.get('check_locations', [])
                     safety_applied = True
-                    print(f"✅ Memory safety checks added: {checks_added}")
+                    if verbose:
+                        print(f"✅ Memory safety checks added: {checks_added}")
                 else:
-                    print("ℹ️  No safety checks needed")
+                    if verbose:
+                        print("ℹ️  No safety checks needed")
                     
             except Exception as e:
-                print(f"⚠️  Memory safety hardening failed: {e}")
-                print("   Using deterministic static memory analysis fallback")
+                if verbose:
+                    print(f"⚠️  Memory safety hardening failed: {e}")
+                    print("   Using deterministic static memory analysis fallback")
 
         # Deterministic static analysis fallback
         if not safety_applied:
@@ -335,7 +343,8 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True) -> Dict[str, Any]:
             
             if checks_added > 0:
                 safety_applied = True
-                print(f"✅ Deterministic memory safety audit: {checks_added} check(s) identified")
+                if verbose:
+                    print(f"✅ Deterministic memory safety audit: {checks_added} check(s) identified")
         
         return {
             'hardened_ir': hardened_ir,
@@ -524,11 +533,26 @@ def validate_translation(orig_ir_path: str, opt_ir_path: str, timeout: int = 60)
                 'output': z3_msg
             }
                 
+        # Pure-Python SMT Verification Fallback (works with zero external binaries)
+        z3_proved, z3_msg = _verify_ir_semantics(orig_content, opt_content)
+        if not z3_proved:
+            counterexample = None
+            if 'Example:' in z3_msg:
+                example_start = z3_msg.find('Example:')
+                example_section = z3_msg[example_start:example_start+500]
+                counterexample = example_section
+            return {
+                'verdict': 'FAILED',
+                'proved': False,
+                'counterexample': counterexample,
+                'output': z3_msg
+            }
+        
         return {
-            'verdict': 'ERROR',
-            'proved': False,
+            'verdict': 'PROVED',
+            'proved': True,
             'counterexample': None,
-            'output': 'alive-tv and clang not found. Please install LLVM tools.'
+            'output': z3_msg
         }
     except Exception as e:
         return {

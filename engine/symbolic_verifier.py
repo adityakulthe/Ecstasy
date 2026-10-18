@@ -43,8 +43,14 @@ class Counterexample:
             "Example:",
         ]
         for name, val in self.inputs.items():
-            hex_val = f"0x{val & 0xFFFFFFFF:08x}" if abs(val) < (1 << 32) else f"0x{val:x}"
-            lines.append(f"{name} = {val} ({hex_val})")
+            if isinstance(val, int):
+                if abs(val) < (1 << 32):
+                    hex_val = f"0x{val & 0xFFFFFFFF:08x}"
+                else:
+                    hex_val = f"0x{val & 0xFFFFFFFFFFFFFFFF:016x}"
+                lines.append(f"{name} = {val} ({hex_val})")
+            else:
+                lines.append(f"{name} = {val}")
         lines.append(f"Source: {self.source_output}")
         lines.append(f"Target: {self.target_output}")
         lines.append("1 incorrect transformation")
@@ -118,25 +124,6 @@ class SymbolicIRVerifier:
                 operands.append(z3.BoolVal(False))
         return operands
 
-    def evaluate_function(self, ret_ty: str, raw_params: str, body: str) -> Tuple[Dict[str, Any], Any, List[Any]]:
-        """
-        Symbolically evaluate an LLVM IR function body into a Z3 return expression.
-        Returns: (param_dict, return_expr, overflow_constraints)
-        """
-        if not Z3_AVAILABLE:
-            raise RuntimeError("Z3 SMT solver is not installed")
-
-        params: Dict[str, Any] = {}
-        if raw_params:
-            for p in raw_params.split(","):
-                p = p.strip()
-                if not p:
-                    continue
-                parts = p.split()
-                if len(parts) >= 2:
-                    ty = parts[0]
-                    name = parts[-1]
-                    width = self._parse_width(ty)
     def _handle_store(self, line: str, env: Dict[str, Any], memory_store: Dict[str, Any]) -> None:
         """Parse and execute a store instruction updating the symbolic memory store."""
         # e.g., store i32 %0, ptr %3, align 4 or store i32 42, ptr %3
@@ -414,7 +401,8 @@ class SymbolicIRVerifier:
                 input_vals = {}
                 for pname, bv in p_orig.items():
                     val = m[bv]
-                    input_vals[f"i32 {pname}"] = val.as_long() if val is not None else 0
+                    w_lbl = f"i{bv.size()}" if hasattr(bv, "size") else "i32"
+                    input_vals[f"{w_lbl} {pname}"] = val.as_long() if val is not None else 0
 
                 src_out = m.eval(r_orig)
                 tgt_out = m.eval(r_opt)

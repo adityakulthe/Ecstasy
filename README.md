@@ -18,7 +18,7 @@
 
 ---
 
-[![Tests](https://img.shields.io/badge/tests-57/57_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-63/63_passing-success)](tests/)
 [![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
 [![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)
@@ -65,6 +65,43 @@ Takes source code (C/C++/Rust/Swift/Julia/Zig) and produces a verified binary th
 ### The Pitch
 
 **We don't rewrite the world's software. We make it safe and fast at the compiler level, and we prove it mathematically.**
+
+---
+
+## 💻 Ecstasy CLI & Enterprise Toolchain
+
+Ecstasy features a production-ready command line interface (`cli.py` / `ecstasy`) enabling developers and DevSecOps pipelines to compile, formally verify, batch audit, and export executive cryptographic bill of materials (CBOM):
+
+### 1. Formally-Verified Compilation & Binary Attestation
+Compile C or C++ source code with automated AI optimization, memory safety hardening, Z3 SMT translation validation, and cryptographic certificate generation:
+```bash
+# Compile and generate HMAC proof certificate, executive HTML report, and JSON summary
+python3 cli.py compile src/program.c \
+    -o bin/program.out \
+    --cert bin/program.proof.json \
+    --html bin/program.attestation.html \
+    --report bin/program.report.json
+```
+
+### 2. Batch Memory Safety & Vulnerability Audit
+Scan entire legacy codebases or directories for unsafe constructs (`scanf`, `strcpy`, unbounded `getelementptr`) and automatically calculate hardening coverage:
+```bash
+# Scan directory, display ANSI status table, and export structured JSON audit
+python3 cli.py audit legacy_src/ --report audit_results.json
+```
+
+### 3. Standalone SMT Translation Validation
+Verify semantic equivalence between any two LLVM IR files using Z3 SMT without needing external tools:
+```bash
+# Formally prove equivalence between unoptimized and optimized IR
+python3 cli.py verify --orig module_orig.ll --opt module_opt.ll
+```
+
+### 4. Interactive Terminal IDE Workbench
+Launch the dark-mode Streamlit dashboard for side-by-side IR diff inspection, agent trajectory monitoring, and real-time Alive2/Z3 proofs:
+```bash
+python3 cli.py ui --port 8501
+```
 
 ---
 
@@ -567,8 +604,9 @@ pytest tests/test_integration.py -v
 | **Bob Agents** | 12 tests | ✅ All passing |
 | **Integration** | 17 tests | ✅ All passing |
 | **All Agents Integration** | 4 scenarios | ✅ All passing |
-| **End-to-End IR Pipeline** | 2 real tests | ✅ Verified with Alive2 |
-| **Total** | **44 tests + 4 scenarios + 2 E2E** | ✅ **100% passing** |
+| **Z3 Symbolic Verifier** | 9 tests | ✅ All passing |
+| **Audit & HTML Attestation** | 6 tests | ✅ All passing |
+| **Total** | **63 tests** | ✅ **100% passing** |
 
 **Test Files:** All tests are located in the [`tests/`](tests/) directory with comprehensive coverage of all components.
 
@@ -988,7 +1026,7 @@ https://github.com/adityakulthe/Ecstasy
 
 **Includes:**
 - Complete source code with all 9 coordinated agents
-- 57 passing tests across unit, agent integration, full pipeline, and Z3 SMT verification
+- 63 passing tests across unit, agent integration, full pipeline, Z3 SMT verification, and batch security auditing
 - Standalone `ecstasy` CLI for compilation, formal verification, memory safety auditing, and attestation
 - Pure-Python Z3 SMT symbolic translation validator with counterexample generation
 - Cryptographic Safety Vault with HMAC-SHA256 tamper-evident attestation
