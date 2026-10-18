@@ -110,6 +110,21 @@ class MicroArchitecturalTuner:
                 supports_avx512=True
             ),
             
+            CPUTarget.AMD_EPYC_GENOA: CPUProfile(
+                name="AMD EPYC Genoa",
+                target=CPUTarget.AMD_EPYC_GENOA,
+                l1_cache_size=32,
+                l1_cache_line_size=64,
+                l2_cache_size=1024,  # 1 MB
+                l3_cache_size=32768,  # 32 MB per CCD
+                vector_width=512,  # Zen 4 AVX-512
+                max_vector_registers=32,
+                branch_predictor_entries=8192,
+                pipeline_depth=19,
+                supports_sve=False,
+                supports_avx512=True
+            ),
+            
             CPUTarget.ARM_NEOVERSE_V2: CPUProfile(
                 name="ARM Neoverse V2",
                 target=CPUTarget.ARM_NEOVERSE_V2,
@@ -217,9 +232,14 @@ class MicroArchitecturalTuner:
         count = 0
         for line in ir_code.split('\n'):
             stripped = line.strip()
-            if stripped and not stripped.startswith(';') and not stripped.endswith(':'):
-                if '=' in stripped or stripped.startswith(('call', 'ret', 'br')):
-                    count += 1
+            if (
+                not stripped
+                or stripped.startswith((';', '!', 'source_filename', 'target ', 'attributes ', 'define ', 'declare ', '{', '}'))
+                or stripped.endswith(':')
+            ):
+                continue
+            if (stripped.startswith('%') and '=' in stripped) or stripped.startswith(('call ', 'ret ', 'br ', 'store ', 'switch ')):
+                count += 1
         return count
     
     def detect_hardware_bottlenecks(

@@ -64,17 +64,24 @@ def is_valid_ir(ir_text: str) -> bool:
     """Validate IR is complete and well-formed"""
     if not ir_text or not ir_text.strip():
         return False
-    open_braces = ir_text.count('{')
-    close_braces = ir_text.count('}')
-    return open_braces == close_braces and ir_text.strip().endswith('}')
+    non_comment_lines = [l.split(";")[0].strip() for l in ir_text.splitlines() if l.split(";")[0].strip()]
+    if not non_comment_lines:
+        return False
+    cleaned = "\n".join(non_comment_lines)
+    open_braces = cleaned.count('{')
+    close_braces = cleaned.count('}')
+    return open_braces > 0 and open_braces == close_braces
 
 def optimize_ir_deterministic(ir: str) -> str:
     """Deterministic LLVM optimization pass when offline or as fallback."""
     clang_bin = shutil.which("clang")
     if clang_bin:
+        in_path = None
+        out_path = None
         try:
+            clean_ir = re.sub(r'\boptnone\b\s*', '', ir)
             with tempfile.NamedTemporaryFile(suffix=".ll", mode="w", delete=False) as in_f:
-                in_f.write(ir)
+                in_f.write(clean_ir)
                 in_path = in_f.name
             out_path = in_path.replace(".ll", "_opt.ll")
             cmd = [clang_bin, "-S", "-emit-llvm", "-O2", "-x", "ir", in_path, "-o", out_path]
@@ -82,15 +89,17 @@ def optimize_ir_deterministic(ir: str) -> str:
             if res.returncode == 0 and os.path.exists(out_path):
                 with open(out_path, "r") as f:
                     opt_ir = f.read()
-                try:
-                    os.unlink(in_path)
-                    os.unlink(out_path)
-                except Exception:
-                    pass
                 if is_valid_ir(opt_ir):
                     return opt_ir
         except Exception:
             pass
+        finally:
+            for p in (in_path, out_path):
+                if p and os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except Exception:
+                        pass
     return ir
 
 def run(ir: str) -> str:

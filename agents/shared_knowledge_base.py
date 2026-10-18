@@ -151,32 +151,46 @@ class SharedKnowledgeBase:
         return constraints
     
     def detect_conflicts(self) -> List[Conflict]:
-        """Detect conflicts between agent outputs"""
+        """Detect conflicts between agent outputs (idempotent / deduplicated)"""
         new_conflicts = []
+        existing_keys = {
+            (tuple(sorted(c.agents)), c.type, c.description)
+            for c in self.conflicts
+        }
         
         # Check for safety violations
         safety_constraints = self.get_constraints("memory_safety")
         for insight in self.agent_insights.values():
             for opt in insight.optimizations_applied:
                 if "remove_bounds_check" in opt and safety_constraints:
-                    conflict = self._create_conflict(
-                        agents=[insight.agent_id, "memory_sentinel"],
-                        type=ConflictType.SAFETY_VIOLATION,
-                        description=f"{opt} violates safety constraints"
-                    )
-                    new_conflicts.append(conflict)
+                    agents = [insight.agent_id, "memory_sentinel"]
+                    desc = f"{opt} violates safety constraints"
+                    key = (tuple(sorted(agents)), ConflictType.SAFETY_VIOLATION, desc)
+                    if key not in existing_keys:
+                        existing_keys.add(key)
+                        conflict = self._create_conflict(
+                            agents=agents,
+                            type=ConflictType.SAFETY_VIOLATION,
+                            description=desc
+                        )
+                        new_conflicts.append(conflict)
         
         # Check for duplicate work
         seen_optimizations = {}
         for agent_id, insight in self.agent_insights.items():
             for opt in insight.optimizations_applied:
                 if opt in seen_optimizations:
-                    conflict = self._create_conflict(
-                        agents=[agent_id, seen_optimizations[opt]],
-                        type=ConflictType.DUPLICATE_WORK,
-                        description=f"Both agents applied {opt}"
-                    )
-                    new_conflicts.append(conflict)
+                    agents = [agent_id, seen_optimizations[opt]]
+                    desc = f"Both agents applied {opt}"
+                    key = (tuple(sorted(agents)), ConflictType.DUPLICATE_WORK, desc)
+                    if key not in existing_keys:
+                        existing_keys.add(key)
+                        conflict = self._create_conflict(
+                            agents=agents,
+                            type=ConflictType.DUPLICATE_WORK,
+                            description=desc
+                        )
+                        new_conflicts.append(conflict)
                 else:
                     seen_optimizations[opt] = agent_id
         

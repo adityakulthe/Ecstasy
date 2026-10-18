@@ -178,20 +178,30 @@ def optimize_ir_pass(original_ir: str, optimized_ir: Optional[Any] = None, use_a
 def _apply_llvm_opt(original_ir: str) -> tuple[str, bool, str]:
     """
     Apply deterministic LLVM optimizations using opt or clang tool.
+    Strips 'optnone' attribute emitted by clang -O0 so LLVM -O2 passes
+    (mem2reg, instcombine, simplifycfg, vectorize) actively transform functions.
     
     Returns:
         Tuple of (optimized_ir, transformation_applied, transformation_type)
     """
     import shutil
+    import re
     try:
+        # Strip 'optnone' so LLVM's optimizer does not skip functions compiled with -O0
+        clean_ir = re.sub(r'\boptnone\b\s*', '', original_ir)
         # Write IR to temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.ll', delete=False) as f:
-            f.write(original_ir)
+            f.write(clean_ir)
             input_path = f.name
         
         output_path = input_path.replace('.ll', '_opt.ll')
         
         opt_bin = shutil.which('opt')
+        if not opt_bin:
+            for candidate in ('/opt/homebrew/opt/llvm/bin/opt', '/usr/local/opt/llvm/bin/opt'):
+                if os.path.exists(candidate):
+                    opt_bin = candidate
+                    break
         clang_bin = shutil.which('clang')
         
         cmd = None
@@ -379,8 +389,11 @@ def _verify_ir_semantics(orig_ir: str, opt_ir: str) -> tuple[bool, str]:
         pass
 
     try:
+        import re
         # 1. Dropped nsw flag check (allows signed overflow UB)
-        if "add nsw" in orig_ir and "add nsw" not in opt_ir and "add " in opt_ir:
+        orig_has_add_nsw = bool(re.search(r'\badd\b[^\n]*\bnsw\b', orig_ir))
+        opt_has_add_nsw = bool(re.search(r'\badd\b[^\n]*\bnsw\b', opt_ir))
+        if orig_has_add_nsw and not opt_has_add_nsw and "add " in opt_ir:
             return False, "Transformation doesn't verify!\nERROR: Target dropped 'nsw' flag allowing undefined behavior on signed overflow.\n\nExample:\ni32 %a = 2147483647\ni32 %b = 1\nSource: poison\nTarget: -2147483648\n1 incorrect transformation"
         
         # 2. Midpoint bug check (low + high) / 2 vs low + (high - low) / 2
@@ -392,7 +405,12 @@ def _verify_ir_semantics(orig_ir: str, opt_ir: str) -> tuple[bool, str]:
             return False, "Transformation doesn't verify!\nERROR: Value mismatch (addition transformed into subtraction)\n\nExample:\ni32 %a = 2\ni32 %b = 3\nSource: 5\nTarget: -1\n1 incorrect transformation"
 
         # 4. Dropped bounds checks (memory safety violation)
-        if ("icmp ult" in orig_ir or "icmp slt" in orig_ir) and ("icmp" not in opt_ir):
+        has_bounds_guard = (
+            "icmp ult" in orig_ir
+            or bool(re.search(r'\b(bounds_ok|bounds_fail|oob|abort)\b', orig_ir))
+        )
+        still_accesses_memory = ("getelementptr" in opt_ir or "load " in opt_ir)
+        if has_bounds_guard and still_accesses_memory and ("icmp" not in opt_ir):
             return False, "Transformation doesn't verify!\nERROR: Target dropped memory bounds check, exposing out-of-bounds vulnerability.\n\nExample:\nptr %arr = non-null\ni32 %idx = 100\nSource: safe branch\nTarget: memory out-of-bounds access\n1 incorrect transformation"
 
         return True, "Transformation seems to be correct!\n1 correct transformation\n0 incorrect transformations\n(Validated via Z3 SMT formal verification)"

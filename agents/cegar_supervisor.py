@@ -105,21 +105,27 @@ class CEGARSupervisor:
         if "Example:" not in alive2_output:
             return None
         
-        # Extract the example section
-        example_match = re.search(r'Example:\s*(.+?)(?:\n|$)', alive2_output)
+        # Extract the example section (supports both single-line and multi-line Alive2/Z3 outputs)
+        example_match = re.search(
+            r'Example:\s*(.*?)(?=\n\s*(?:Source:|Target:|Summary:|\n)|\Z)',
+            alive2_output,
+            re.DOTALL
+        )
         if not example_match:
             return None
         
-        example_text = example_match.group(1)
+        example_text = example_match.group(1).strip()
         
-        # Parse individual values: %var = value
+        # Parse individual values: %var = value or var = value
         values = []
-        value_pattern = r'%(\w+)\s*=\s*([^,\n]+)'
+        value_pattern = r'(%?[\w.]+)\s*=\s*([^,\n]+)'
         for match in re.finditer(value_pattern, example_text):
             var_name = match.group(1)
+            if not var_name.startswith('%'):
+                var_name = f"%{var_name}"
             var_value = match.group(2).strip()
             values.append(CounterexampleValue(
-                variable=f"%{var_name}",
+                variable=var_name,
                 value=var_value
             ))
         
@@ -230,17 +236,23 @@ Targeted Fix:
         Returns:
             Number of instructions
         """
-        # Count lines that look like instructions (start with %, contain =)
         lines = ir_code.split('\n')
         instruction_count = 0
         
         for line in lines:
             stripped = line.strip()
-            # Skip comments, labels, and empty lines
-            if not stripped or stripped.startswith(';') or stripped.endswith(':'):
+            # Skip comments, labels, module headers, metadata, and braces
+            if (
+                not stripped
+                or stripped.startswith((';', '!', 'source_filename', 'target ', 'attributes ', 'define ', 'declare ', '{', '}'))
+                or stripped.endswith(':')
+            ):
                 continue
-            # Count lines with assignments or calls
-            if '=' in stripped or stripped.startswith('call ') or stripped.startswith('ret '):
+            # Count instructions (SSA assignments, stores, branches, calls, returns)
+            if (
+                stripped.startswith('%') and '=' in stripped
+                or stripped.startswith(('call ', 'ret ', 'store ', 'br ', 'switch ', 'unreachable'))
+            ):
                 instruction_count += 1
         
         return instruction_count
@@ -444,6 +456,7 @@ Targeted Fix:
             )
             
             if validation["proved"] and perf_metrics.acceptable:
+                from dataclasses import asdict
                 print(f"   ✅ CEGAR Success: Optimization proved correct with acceptable overhead")
                 reasoning_log.counterexample = None
                 self.reasoning_logs.append(reasoning_log)
@@ -452,7 +465,7 @@ Targeted Fix:
                     "iterations": iteration,
                     "verdict": "PROVED",
                     "performance_overhead": perf_metrics.safety_overhead_percent,
-                    "reasoning_logs": self.reasoning_logs
+                    "reasoning_logs": [asdict(log) for log in self.reasoning_logs]
                 }
                 
                 return optimized_ir, metadata
@@ -468,13 +481,13 @@ Targeted Fix:
                     if counterexample.suggested_fix:
                         print(f"      💡 Suggested fix: {counterexample.suggested_fix[:100]}...")
                     
-                    # Apply AI-powered patch using Granite
+                    # Apply AI-powered patch using Granite (with deterministic targeted fallback)
                     print("      🤖 Calling Granite to fix the specific issue...")
                     patched_ir = self._ai_patch_from_counterexample(optimized_ir, counterexample)
                     current_ir = patched_ir
                     
                     reasoning_log.counterexample = counterexample
-                    reasoning_log.patch_applied = "AI patch from Granite based on counterexample"
+                    reasoning_log.patch_applied = "AI/Targeted patch based on counterexample"
                 else:
                     print("      ⚠️  Could not parse counterexample")
                     current_ir = original_ir  # Reset
@@ -487,24 +500,29 @@ Targeted Fix:
                 current_ir = original_ir  # Reset for now
                 self.reasoning_logs.append(reasoning_log)
         
+        from dataclasses import asdict
         print(f"\n   ⚠️  CEGAR did not converge after {self.max_iterations} iterations")
         
         metadata = {
             "iterations": self.max_iterations,
             "verdict": "TIMEOUT",
-            "reasoning_logs": self.reasoning_logs
+            "reasoning_logs": [asdict(log) for log in self.reasoning_logs]
         }
         
         return None, metadata
     
     def _ai_patch_from_counterexample(self, ir: str, ce: CounterexampleAnalysis) -> str:
         """
-        Use Granite to patch IR based on counterexample analysis
-        Granite reads the specific failure and fixes the exact issue
+        Use Granite to patch IR based on counterexample analysis.
+        Falls back to deterministic apply_targeted_patch when offline or if AI fails.
         """
         try:
-            from agents.ir_architect import model, is_valid_ir
+            from agents.ir_architect import is_valid_ir, _get_watsonx_model
             import re
+            
+            model = _get_watsonx_model()
+            if model is None:
+                return self.apply_targeted_patch(ir, ce)
             
             # Build detailed prompt with counterexample info
             prompt = f"""Alive2 found a bug in this LLVM IR.
@@ -526,10 +544,10 @@ Fix ONLY the specific issue above. Return raw IR only, no markdown:
             out = re.sub(r"\n?```$", "", out, flags=re.MULTILINE)
             
             # Validate the output
-            return out if is_valid_ir(out) else ir
+            return out if is_valid_ir(out) else self.apply_targeted_patch(ir, ce)
         except Exception as e:
-            print(f"  ⚠️  AI patch failed: {e}, using original IR")
-            return ir
+            print(f"  ⚠️  AI patch failed: {e}, falling back to deterministic targeted patch")
+            return self.apply_targeted_patch(ir, ce)
     
     def _apply_optimization(self, ir_code: str, opt_type: str) -> str:
         """Apply real LLVM optimization passes"""
@@ -549,19 +567,25 @@ Fix ONLY the specific issue above. Return raw IR only, no markdown:
             return ir_code
         
         passes = "mem2reg,dce,instcombine" if opt_type == "performance" else "mem2reg"
+        sanitized_ir = re.sub(r'\boptnone\b', '', ir_code)
         with tempfile.NamedTemporaryFile(suffix='.ll', mode='w', delete=False) as f:
-            f.write(ir_code)
+            f.write(sanitized_ir)
             path = f.name
         out = path.replace('.ll', '_opt.ll')
-        r = subprocess.run([opt_path, f'-passes={passes}', '-S', path, '-o', out], capture_output=True, text=True)
-        if r.returncode == 0:
-            result = open(out).read()
-            os.unlink(path)
-            os.unlink(out)
-            return result
-        else:
-            print(f"   ⚠️  opt failed: {r.stderr}")
-        os.unlink(path)
+        try:
+            r = subprocess.run([opt_path, f'-passes={passes}', '-S', path, '-o', out], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 and os.path.exists(out):
+                with open(out, 'r') as f_out:
+                    return f_out.read()
+            else:
+                print(f"   ⚠️  opt failed: {r.stderr}")
+        finally:
+            for p in (path, out):
+                try:
+                    if os.path.exists(p):
+                        os.unlink(p)
+                except OSError:
+                    pass
         return ir_code
     
     def _get_timestamp(self) -> str:

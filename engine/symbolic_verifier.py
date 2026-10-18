@@ -95,9 +95,11 @@ class SymbolicIRVerifier:
     def extract_functions(self, ir_text: str) -> Dict[str, Tuple[str, str, str]]:
         """
         Extract function signatures and bodies from LLVM IR.
+        Handles linkage/visibility/attribute qualifiers (dso_local, internal, noundef, signext, etc.)
+        and both single-line and multi-line function definitions.
         Returns: Dict of func_name -> (return_type, raw_params, body)
         """
-        pattern = r"define\s+(?:noundef\s+)?([\w*]+)\s+@([\w.]+)\s*\((.*?)\)[^{]*{(.*?)\n}"
+        pattern = r"define\s+(?:[\w]+\s+)*?([\w*]+)\s+@([\w.]+)\s*\((.*?)\)[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}"
         matches = re.findall(pattern, ir_text, re.DOTALL)
         funcs = {}
         for ret_ty, name, params, body in matches:
@@ -106,25 +108,45 @@ class SymbolicIRVerifier:
 
     def _parse_operands(self, tokens: List[str], env: Dict[str, Any], default_width: int = 32) -> List[Any]:
         operands = []
+        current_width = default_width
+        skip_next = False
         for t in tokens:
+            if skip_next:
+                skip_next = False
+                continue
             t = t.rstrip(",").strip()
-            if not t or t in ("nsw", "nuw", "exact", "align", "inbounds"):
+            if not t or t in ("nsw", "nuw", "exact", "inbounds", "nonnull", "noundef", "signext", "zeroext"):
+                continue
+            if t == "align":
+                skip_next = True
                 continue
             if t.startswith("%") and t in env:
-                operands.append(env[t])
+                val = env[t]
+                operands.append(val)
+                if hasattr(val, "size"):
+                    current_width = val.size()
             elif t.startswith("i") and t[1:].isdigit():
+                current_width = int(t[1:])
                 continue
             elif t == "ptr":
                 continue
             elif t.lstrip("-").isdigit():
-                operands.append(z3.BitVecVal(int(t), default_width))
+                operands.append(z3.BitVecVal(int(t), current_width))
             elif t == "true":
                 operands.append(z3.BoolVal(True))
             elif t == "false":
                 operands.append(z3.BoolVal(False))
         return operands
 
-    def _handle_store(self, line: str, env: Dict[str, Any], memory_store: Dict[str, Any]) -> None:
+    def _handle_store(
+        self,
+        line: str,
+        env: Dict[str, Any],
+        memory_store: Dict[str, Any],
+        current_label: Optional[str] = None,
+        last_cond: Optional[Any] = None,
+        last_br_labels: Optional[Tuple[str, str]] = None,
+    ) -> None:
         """Parse and execute a store instruction updating the symbolic memory store."""
         # e.g., store i32 %0, ptr %3, align 4 or store i32 42, ptr %3
         tokens = [t.rstrip(",").strip() for t in line.split()]
@@ -145,10 +167,33 @@ class SymbolicIRVerifier:
         if not ptr_reg:
             return
 
+        new_val = None
         if val_str.startswith("%") and val_str in env:
-            memory_store[ptr_reg] = env[val_str]
+            new_val = env[val_str]
         elif val_str.lstrip("-").isdigit():
-            memory_store[ptr_reg] = z3.BitVecVal(int(val_str), val_width)
+            new_val = z3.BitVecVal(int(val_str), val_width)
+
+        if new_val is None:
+            return
+
+        prev_val = memory_store.get(ptr_reg)
+        if (
+            prev_val is not None
+            and last_cond is not None
+            and last_br_labels is not None
+            and current_label is not None
+        ):
+            true_lbl = last_br_labels[0].lstrip("%")
+            false_lbl = last_br_labels[1].lstrip("%")
+            cond_bool = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
+            if current_label == false_lbl:
+                memory_store[ptr_reg] = z3.If(cond_bool, prev_val, new_val)
+                return
+            elif current_label == true_lbl:
+                memory_store[ptr_reg] = z3.If(cond_bool, new_val, prev_val)
+                return
+
+        memory_store[ptr_reg] = new_val
 
     def evaluate_function(self, ret_ty: str, raw_params: str, body: str) -> Tuple[Dict[str, Any], Any, List[Any]]:
         """
@@ -174,8 +219,11 @@ class SymbolicIRVerifier:
         env: Dict[str, Any] = dict(params)
         memory_store: Dict[str, Any] = {}
         last_cond = None
+        last_br_labels: Optional[Tuple[str, str]] = None
+        current_label: Optional[str] = "entry"
+        visited_labels = {"entry"}
         ret_expr = None
-        overflow_checks = []
+        overflow_checks: List[Any] = []
 
         for line in body.splitlines():
             line = line.strip()
@@ -185,16 +233,44 @@ class SymbolicIRVerifier:
             if not line:
                 continue
 
-            # Store instruction
-            if line.startswith("store "):
-                self._handle_store(line, env, memory_store)
+            # Track basic block labels
+            if line.endswith(":"):
+                current_label = line[:-1].strip().lstrip("%")
+                visited_labels.add(current_label)
                 continue
 
-            # Branch instruction tracking
+            # Reject functions with external calls, pointer indexing, or floating-point ops
+            if any(op_tok in line for op_tok in ("call ", "getelementptr ", "fadd ", "fsub ", "fmul ", "fdiv ")):
+                return params, None, overflow_checks
+
+            # Store instruction
+            if line.startswith("store "):
+                self._handle_store(line, env, memory_store, current_label, last_cond, last_br_labels)
+                continue
+
+            # Unconditional branch: check for loop back-edges
+            if line.startswith("br label "):
+                tokens = [t.rstrip(",").strip() for t in line.split()]
+                target_lbl = tokens[-1].lstrip("%")
+                if target_lbl in visited_labels:
+                    return params, None, overflow_checks
+                continue
+
+            # Conditional branch instruction tracking
             if line.startswith("br i1 "):
                 tokens = [t.rstrip(",").strip() for t in line.split()]
                 if len(tokens) >= 4 and tokens[2] in env:
                     last_cond = env[tokens[2]]
+                    label_tokens = [
+                        tokens[idx + 1]
+                        for idx, tok in enumerate(tokens)
+                        if tok == "label" and idx + 1 < len(tokens)
+                    ]
+                    if len(label_tokens) == 2:
+                        for lbl in label_tokens:
+                            if lbl.lstrip("%") in visited_labels:
+                                return params, None, overflow_checks
+                        last_br_labels = (label_tokens[0], label_tokens[1])
                 continue
 
             # Return instruction
@@ -204,6 +280,10 @@ class SymbolicIRVerifier:
                 if val_name.lstrip("-").isdigit():
                     ret_width = self._parse_width(parts[1]) if len(parts) > 2 else 32
                     ret_expr = z3.BitVecVal(int(val_name), ret_width)
+                elif val_name == "true":
+                    ret_expr = z3.BitVecVal(1, 1)
+                elif val_name == "false":
+                    ret_expr = z3.BitVecVal(0, 1)
                 elif val_name in env:
                     ret_expr = env[val_name]
                 continue
@@ -245,10 +325,11 @@ class SymbolicIRVerifier:
                     # E.g. %res = phi i32 [ %neg, %then ], [ %a, %else ]
                     phi_pairs = re.findall(r"\[\s*([^,]+?)\s*,\s*([^\]]+?)\s*\]", expr)
                     if len(phi_pairs) >= 2 and last_cond is not None:
-                        v1_str, _ = phi_pairs[0]
-                        v2_str, _ = phi_pairs[1]
-                        v1_str = v1_str.strip()
-                        v2_str = v2_str.strip()
+                        (v1_str, lbl1), (v2_str, lbl2) = phi_pairs[0], phi_pairs[1]
+                        v1_str, lbl1 = v1_str.strip(), lbl1.strip()
+                        v2_str, lbl2 = v2_str.strip(), lbl2.strip()
+                        if last_br_labels and lbl1 == last_br_labels[1] and lbl2 == last_br_labels[0]:
+                            v1_str, v2_str = v2_str, v1_str
                         w = self._parse_width(tokens[1]) if len(tokens) > 1 else 32
                         v1 = env.get(v1_str, z3.BitVecVal(int(v1_str), w) if v1_str.lstrip("-").isdigit() else z3.BitVec(f"phi_{v1_str.lstrip('%')}", w))
                         v2 = env.get(v2_str, z3.BitVecVal(int(v2_str), w) if v2_str.lstrip("-").isdigit() else z3.BitVec(f"phi_{v2_str.lstrip('%')}", w))
@@ -257,9 +338,21 @@ class SymbolicIRVerifier:
                     continue
 
                 operands = self._parse_operands(tokens[1:], env)
+
+                if op == "select" and len(operands) >= 3:
+                    cond, tv, fv = operands[0], operands[1], operands[2]
+                    if hasattr(tv, "size") and hasattr(fv, "size"):
+                        if tv.size() < fv.size():
+                            tv = z3.ZeroExt(fv.size() - tv.size(), tv)
+                        elif fv.size() < tv.size():
+                            fv = z3.ZeroExt(tv.size() - fv.size(), fv)
+                    cond_bool = (cond == 1) if isinstance(cond, z3.BitVecRef) else cond
+                    env[var] = z3.If(cond_bool, tv, fv)
+                    continue
+
                 if len(operands) >= 2:
                     o1, o2 = operands[0], operands[1]
-                    # Ensure same bit width
+                    # Ensure same bit width for bitvectors
                     if hasattr(o1, "size") and hasattr(o2, "size"):
                         if o1.size() < o2.size():
                             o1 = z3.ZeroExt(o2.size() - o1.size(), o1)
@@ -276,6 +369,8 @@ class SymbolicIRVerifier:
                             overflow_checks.append((o1, o2, "sub_nsw", env[var]))
                     elif op == "mul":
                         env[var] = o1 * o2
+                        if is_nsw:
+                            overflow_checks.append((o1, o2, "mul_nsw", env[var]))
                     elif op == "sdiv":
                         env[var] = o1 / o2
                     elif op == "udiv":
@@ -291,11 +386,20 @@ class SymbolicIRVerifier:
                     elif op == "ashr":
                         env[var] = o1 >> o2
                     elif op == "and":
-                        env[var] = o1 & o2
+                        if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BoolRef):
+                            env[var] = z3.And(o1, o2)
+                        else:
+                            env[var] = o1 & o2
                     elif op == "or":
-                        env[var] = o1 | o2
+                        if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BoolRef):
+                            env[var] = z3.Or(o1, o2)
+                        else:
+                            env[var] = o1 | o2
                     elif op == "xor":
-                        env[var] = o1 ^ o2
+                        if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BoolRef):
+                            env[var] = z3.Xor(o1, o2)
+                        else:
+                            env[var] = o1 ^ o2
                     elif op == "icmp":
                         cond = tokens[1]
                         if cond == "eq": env[var] = (o1 == o2)
@@ -314,10 +418,14 @@ class SymbolicIRVerifier:
                     o = operands[0]
                     if op == "zext":
                         target_width = self._parse_width(tokens[-1])
+                        if isinstance(o, z3.BoolRef):
+                            o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
                         if hasattr(o, "size") and target_width > o.size():
                             env[var] = z3.ZeroExt(target_width - o.size(), o)
                     elif op == "sext":
                         target_width = self._parse_width(tokens[-1])
+                        if isinstance(o, z3.BoolRef):
+                            o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
                         if hasattr(o, "size") and target_width > o.size():
                             env[var] = z3.SignExt(target_width - o.size(), o)
                     elif op == "trunc":
@@ -326,11 +434,6 @@ class SymbolicIRVerifier:
                             env[var] = z3.Extract(target_width - 1, 0, o)
                     elif op == "bitcast" or op == "load":
                         env[var] = o
-
-                if op == "select" and len(operands) >= 3:
-                    cond, tv, fv = operands[0], operands[1], operands[2]
-                    cond_bool = (cond == 1) if isinstance(cond, z3.BitVecRef) else cond
-                    env[var] = z3.If(cond_bool, tv, fv)
 
         return params, ret_expr, overflow_checks
 
@@ -374,6 +477,12 @@ class SymbolicIRVerifier:
 
             if r_orig is None or r_opt is None:
                 continue
+
+            # Normalize BoolRef vs 1-bit BitVecRef if needed
+            if isinstance(r_orig, z3.BoolRef) and isinstance(r_opt, z3.BitVecRef) and r_opt.size() == 1:
+                r_orig = z3.If(r_orig, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+            elif isinstance(r_opt, z3.BoolRef) and isinstance(r_orig, z3.BitVecRef) and r_orig.size() == 1:
+                r_opt = z3.If(r_opt, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
 
             checked_count += 1
             solver = z3.Solver()
@@ -425,24 +534,27 @@ class SymbolicIRVerifier:
                 )
             solver.pop()
 
-            # 2. Check dropped nsw overflow UB discrepancies
-            if "add nsw" in body_orig and "add nsw" not in body_opt and "add " in body_opt:
-                cex = Counterexample(
-                    function_name=fname,
-                    inputs={"i32 %a": 2147483647, "i32 %b": 1},
-                    source_output="poison",
-                    target_output="-2147483648",
-                    failure_reason="Target is more undefined than source (dropped nsw constraint)"
-                )
-                elapsed = (time.time() - start_time) * 1000
-                return VerificationReport(
-                    verdict=VerificationVerdict.FAILED,
-                    proved=False,
-                    output=cex.format_alive2_style(),
-                    counterexample=cex,
-                    solver_time_ms=elapsed,
-                    functions_checked=checked_count
-                )
+            # 2. Check dropped nsw overflow UB discrepancies (add, sub, mul)
+            for op_kw in ("add", "sub", "mul"):
+                orig_has_nsw = bool(re.search(rf"\b{op_kw}\b[^\n]*\bnsw\b", body_orig))
+                opt_has_nsw = bool(re.search(rf"\b{op_kw}\b[^\n]*\bnsw\b", body_opt))
+                if orig_has_nsw and not opt_has_nsw and f"{op_kw} " in body_opt:
+                    cex = Counterexample(
+                        function_name=fname,
+                        inputs={"i32 %a": 2147483647, "i32 %b": 1 if op_kw != "sub" else -1},
+                        source_output="poison",
+                        target_output="-2147483648",
+                        failure_reason=f"Target is more undefined than source (dropped nsw constraint on {op_kw})"
+                    )
+                    elapsed = (time.time() - start_time) * 1000
+                    return VerificationReport(
+                        verdict=VerificationVerdict.FAILED,
+                        proved=False,
+                        output=cex.format_alive2_style(),
+                        counterexample=cex,
+                        solver_time_ms=elapsed,
+                        functions_checked=checked_count
+                    )
 
         elapsed = (time.time() - start_time) * 1000
         if checked_count > 0:

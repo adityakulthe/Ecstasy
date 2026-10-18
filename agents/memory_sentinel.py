@@ -2,8 +2,6 @@ import os
 import re
 from typing import Optional, Any
 from dotenv import load_dotenv
-from ibm_watsonx_ai import Credentials
-from ibm_watsonx_ai.foundation_models import ModelInference
 
 load_dotenv()
 
@@ -61,9 +59,13 @@ def is_valid_ir(ir_text: str) -> bool:
     """Validate IR is complete and well-formed"""
     if not ir_text or not ir_text.strip():
         return False
-    open_braces = ir_text.count('{')
-    close_braces = ir_text.count('}')
-    return open_braces == close_braces and ir_text.strip().endswith('}')
+    non_comment_lines = [l.split(";")[0].strip() for l in ir_text.splitlines() if l.split(";")[0].strip()]
+    if not non_comment_lines:
+        return False
+    cleaned = "\n".join(non_comment_lines)
+    open_braces = cleaned.count('{')
+    close_braces = cleaned.count('}')
+    return open_braces > 0 and open_braces == close_braces
 
 def run(ir: str) -> str:
     if get_model() is not None:

@@ -689,6 +689,13 @@ def render_live_pipeline_dashboard():
                 with st.spinner("Bob @ir-architect optimizing IR..."):
                     if st.session_state.original_ir:
                         optimize_result = optimize_ir_pass(st.session_state.original_ir, use_ai=True)
+                        for tmp_key in ('orig_path', 'opt_path'):
+                            tmp_file = optimize_result.get(tmp_key)
+                            if tmp_file and os.path.exists(tmp_file):
+                                try:
+                                    os.unlink(tmp_file)
+                                except OSError:
+                                    pass
                         st.session_state.optimized_ir = optimize_result.get('optimized_ir', st.session_state.original_ir)
                         st.session_state.transformation_applied = optimize_result.get('transformation_applied', False)
                         st.session_state.transformation_type = optimize_result.get('transformation_type', 'none')
