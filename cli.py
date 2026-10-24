@@ -437,6 +437,20 @@ def cmd_benchmark(args):
         print(f"📄 Benchmark report exported to: {out_p}")
 
 
+def cmd_mcp(args):
+    """Run the Ecstasy FastMCP server over stdio or list registered MCP tools."""
+    from server.mcp_server import get_mcp_tools_manifest, mcp
+
+    if getattr(args, "list_tools", False):
+        print(json.dumps(get_mcp_tools_manifest(), indent=2))
+        return
+    if mcp is not None:
+        mcp.run()
+    else:
+        print("FastMCP is not installed. Registered tools:")
+        print(json.dumps(get_mcp_tools_manifest(), indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -484,6 +498,10 @@ def main():
     bench_p.add_argument("path", nargs="?", default="demo_corpus", help="File or directory corpus path (default: demo_corpus)")
     bench_p.add_argument("--report", help="Optional path to export benchmark results as JSON")
 
+    # mcp
+    mcp_p = subparsers.add_parser("mcp", help="Launch the FastMCP stdio server or list registered MCP compiler tools")
+    mcp_p.add_argument("--list-tools", action="store_true", help="Print registered MCP tool manifest as JSON")
+
     # doctor
     subparsers.add_parser("doctor", help="Run system and toolchain diagnostic checks")
 
@@ -514,6 +532,8 @@ def main():
         cmd_audit(args)
     elif args.command == "benchmark":
         cmd_benchmark(args)
+    elif args.command == "mcp":
+        cmd_mcp(args)
     elif args.command == "doctor":
         cmd_doctor(args)
     elif args.command == "demo":

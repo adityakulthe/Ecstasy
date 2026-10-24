@@ -833,3 +833,97 @@ entry:
         assert client.base_url == "https://api.openai.com/v1"
         assert client.model_id == "gpt-4o-mini"
 
+    def test_saturating_arithmetic_and_bitreverse_intrinsics_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. Unsigned saturating addition: @llvm.uadd.sat.i32(a, b) == (a + b < a) ? -1 : (a + b)
+        src_uadd_sat = """
+        define i32 @uadd_sat_fn(i32 %a, i32 %b) {
+        entry:
+          %sum = add i32 %a, %b
+          %ovf = icmp ult i32 %sum, %a
+          %res = select i1 %ovf, i32 -1, i32 %sum
+          ret i32 %res
+        }
+        """
+        tgt_uadd_sat = """
+        declare i32 @llvm.uadd.sat.i32(i32, i32)
+        define i32 @uadd_sat_fn(i32 %a, i32 %b) {
+        entry:
+          %res = call i32 @llvm.uadd.sat.i32(i32 %a, i32 %b)
+          ret i32 %res
+        }
+        """
+        res_uadd = verify_ir_equivalence(src_uadd_sat, tgt_uadd_sat)
+        assert res_uadd.verdict == "PROVED"
+        assert res_uadd.proved is True
+
+        # 2. Unsigned saturating subtraction: @llvm.usub.sat.i32(a, b) == (a < b) ? 0 : (a - b)
+        src_usub_sat = """
+        define i32 @usub_sat_fn(i32 %a, i32 %b) {
+        entry:
+          %udf = icmp ult i32 %a, %b
+          %diff = sub i32 %a, %b
+          %res = select i1 %udf, i32 0, i32 %diff
+          ret i32 %res
+        }
+        """
+        tgt_usub_sat = """
+        declare i32 @llvm.usub.sat.i32(i32, i32)
+        define i32 @usub_sat_fn(i32 %a, i32 %b) {
+        entry:
+          %res = call i32 @llvm.usub.sat.i32(i32 %a, i32 %b)
+          ret i32 %res
+        }
+        """
+        res_usub = verify_ir_equivalence(src_usub_sat, tgt_usub_sat)
+        assert res_usub.verdict == "PROVED"
+        assert res_usub.proved is True
+
+        # 3. Involution of bitreverse: bitreverse(bitreverse(x)) == x
+        src_bitrev = """
+        define i32 @id_bitrev(i32 %x) {
+        entry:
+          ret i32 %x
+        }
+        """
+        tgt_bitrev = """
+        declare i32 @llvm.bitreverse.i32(i32)
+        define i32 @id_bitrev(i32 %x) {
+        entry:
+          %r1 = call i32 @llvm.bitreverse.i32(i32 %x)
+          %r2 = call i32 @llvm.bitreverse.i32(i32 %r1)
+          ret i32 %r2
+        }
+        """
+        res_bitrev = verify_ir_equivalence(src_bitrev, tgt_bitrev)
+        assert res_bitrev.verdict == "PROVED"
+        assert res_bitrev.proved is True
+
+    def test_fastmcp_server_tools_and_manifest(self):
+        from server.mcp_server import (
+            get_mcp_tools_manifest,
+            mcp_audit_memory_safety,
+            mcp_compile_to_ir,
+            mcp_optimize_ir,
+            mcp_verify_ir_equivalence,
+        )
+
+        manifest = get_mcp_tools_manifest()
+        assert len(manifest) == 6
+        names = {t["name"] for t in manifest}
+        assert "mcp_compile_to_ir" in names
+        assert "mcp_verify_ir_equivalence" in names
+        assert "mcp_audit_memory_safety" in names
+
+        c_src = "int double_val(int x) { return x + x; }\n"
+        comp = mcp_compile_to_ir(c_src)
+        assert comp["success"] is True
+        opt = mcp_optimize_ir(comp["ir"], use_ai=False)
+        assert opt["success"] is True
+        ver = mcp_verify_ir_equivalence(comp["ir"], opt["optimized_ir"])
+        assert ver["verdict"] == "PROVED"
+        audit = mcp_audit_memory_safety(comp["ir"], include_sarif=True)
+        assert "sarif" in audit
+        assert audit["sarif"]["version"] == "2.1.0"
+

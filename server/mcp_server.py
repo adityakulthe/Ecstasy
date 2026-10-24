@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import difflib
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
 
 
@@ -413,7 +413,7 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True, verbose: bool = True)
         }
 
 
-def export_sarif_report(audit_records: list, output_path: str) -> Dict[str, Any]:
+def export_sarif_report(audit_records: list, output_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Export CWE-mapped memory safety audit records in OASIS SARIF v2.1.0 format
     for GitHub Code Scanning / GitHub Advanced Security integration.
@@ -470,8 +470,9 @@ def export_sarif_report(audit_records: list, output_path: str) -> Dict[str, Any]
         ],
     }
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(sarif_payload, f, indent=2)
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(sarif_payload, f, indent=2)
     return sarif_payload
 
 
@@ -684,14 +685,157 @@ def validate_translation(orig_ir_path: str, opt_ir_path: str, timeout: int = 60)
         }
 
 
-# MCP Server setup (if using FastMCP)
-if __name__ == '__main__':
-    print("AI Compiler MCP Server")
-    print("=" * 50)
-    print("\nAvailable tools:")
-    print("1. compile_to_ir - Compile C/C++ to LLVM IR")
-    print("2. optimize_ir_pass - Register IR transformation")
-    print("3. validate_translation - Validate with Alive2")
-    print("\nServer ready for tool calls.")
+# FastMCP Server & Tool Registration
+try:
+    from mcp.server.fastmcp import FastMCP
+    mcp = FastMCP("ecstasy-compiler")
+    _FASTMCP_AVAILABLE = True
+except Exception:
+    mcp = None
+    _FASTMCP_AVAILABLE = False
 
-# Made with Bob
+
+def _mcp_tool(fn):
+    """Register a function as a FastMCP tool if FastMCP is installed."""
+    if _FASTMCP_AVAILABLE and mcp is not None:
+        return mcp.tool()(fn)
+    return fn
+
+
+def get_mcp_tools_manifest() -> List[Dict[str, str]]:
+    """Return metadata for all registered Ecstasy MCP tools."""
+    return [
+        {
+            "name": "mcp_compile_to_ir",
+            "description": "Compile C/C++ source code to unoptimized LLVM IR (.ll)",
+        },
+        {
+            "name": "mcp_optimize_ir",
+            "description": "Apply AI-driven or deterministic LLVM optimization passes to LLVM IR",
+        },
+        {
+            "name": "mcp_verify_ir_equivalence",
+            "description": "Formally verify bit-accurate semantic equivalence (Target <= Source) via Alive2 & Z3 SMT",
+        },
+        {
+            "name": "mcp_audit_memory_safety",
+            "description": "Audit LLVM IR for CWE memory vulnerabilities and optionally export OASIS SARIF v2.1.0",
+        },
+        {
+            "name": "mcp_run_corpus_benchmark",
+            "description": "Run the automated C/IR corpus benchmark with Z3 formal verification",
+        },
+        {
+            "name": "mcp_supervise_pipeline",
+            "description": "Execute the full 9-agent parallel deliberation & formal verification compiler pipeline",
+        },
+    ]
+
+
+@_mcp_tool
+def mcp_compile_to_ir(c_code: str, filename: str = "input.c") -> Dict[str, Any]:
+    """Compile C/C++ code string to unoptimized LLVM IR."""
+    res = compile_to_ir(c_code, filename=filename)
+    ir_path = res.get("ir_path")
+    if ir_path and os.path.exists(ir_path):
+        try:
+            os.unlink(ir_path)
+        except OSError:
+            pass
+    return res
+
+
+@_mcp_tool
+def mcp_optimize_ir(original_ir: str, use_ai: bool = False) -> Dict[str, Any]:
+    """Optimize LLVM IR via IRArchitect (deterministic -O2 or LLM-assisted)."""
+    from agents.ir_architect import optimize_ir_deterministic, run as run_ir_architect
+
+    cand_ir = run_ir_architect(original_ir) if use_ai else optimize_ir_deterministic(original_ir)
+    res = optimize_ir_pass(original_ir, cand_ir)
+    for k in ("orig_path", "opt_path"):
+        p = res.get(k)
+        if p and os.path.exists(p):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+    res["success"] = "optimized_ir" in res
+    return res
+
+
+@_mcp_tool
+def mcp_verify_ir_equivalence(original_ir: str, optimized_ir: str, timeout: int = 30) -> Dict[str, Any]:
+    """Formally verify semantic equivalence between original and optimized LLVM IR (strings or file paths) using Alive2 & Z3."""
+    temp_paths = []
+    try:
+        if os.path.exists(original_ir):
+            orig_path = original_ir
+        else:
+            fd1, orig_path = tempfile.mkstemp(suffix="_mcp_orig.ll")
+            with os.fdopen(fd1, "w", encoding="utf-8") as f1:
+                f1.write(original_ir)
+            temp_paths.append(orig_path)
+
+        if os.path.exists(optimized_ir):
+            opt_path = optimized_ir
+        else:
+            fd2, opt_path = tempfile.mkstemp(suffix="_mcp_opt.ll")
+            with os.fdopen(fd2, "w", encoding="utf-8") as f2:
+                f2.write(optimized_ir)
+            temp_paths.append(opt_path)
+
+        return validate_translation(orig_path, opt_path, timeout=timeout)
+    finally:
+        for p in temp_paths:
+            if p and os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+
+@_mcp_tool
+def mcp_audit_memory_safety(
+    llvm_ir: str,
+    source_file: str = "input.c",
+    include_sarif: bool = True,
+) -> Dict[str, Any]:
+    """Scan LLVM IR for CWE memory vulnerabilities, inject runtime bounds guards, and optionally emit SARIF v2.1.0."""
+    res = apply_memory_safety(llvm_ir, use_ai=False, verbose=False)
+    if include_sarif:
+        records = [{"file": source_file, "findings": res.get("check_locations", [])}]
+        res["sarif"] = export_sarif_report(records, output_path=None)
+    return res
+
+
+@_mcp_tool
+def mcp_run_corpus_benchmark(corpus_path: str = "demo_corpus") -> Dict[str, Any]:
+    """Benchmark LLVM IR instruction reduction, CWE security guards, and Z3 equivalence across a C/IR corpus."""
+    from engine.corpus_benchmark import run_corpus_benchmark
+
+    return run_corpus_benchmark(corpus_path)
+
+
+@_mcp_tool
+def mcp_supervise_pipeline(c_code: str, max_retries: int = 2, enable_advanced: bool = True) -> Dict[str, Any]:
+    """Run the full 9-agent parallel deliberation & formal verification pipeline on C source code."""
+    from agents.supervisor import CompilerSupervisor
+
+    sup = CompilerSupervisor(max_retries=max_retries, enable_advanced_agents=enable_advanced)
+    res = sup.compile_and_verify(c_code)
+    bin_path = res.get("binary_path")
+    if bin_path and os.path.exists(bin_path):
+        try:
+            os.unlink(bin_path)
+        except OSError:
+            pass
+    return res
+
+
+if __name__ == "__main__":
+    if _FASTMCP_AVAILABLE and mcp is not None:
+        mcp.run()
+    else:
+        print("Ecstasy MCP Server (FastMCP fallback mode)")
+        for tool in get_mcp_tools_manifest():
+            print(f"- {tool['name']}: {tool['description']}")

@@ -278,6 +278,11 @@ class SymbolicIRVerifier:
                     "@llvm.usub.with.overflow.",
                     "@llvm.smul.with.overflow.",
                     "@llvm.umul.with.overflow.",
+                    "@llvm.sadd.sat.",
+                    "@llvm.uadd.sat.",
+                    "@llvm.ssub.sat.",
+                    "@llvm.usub.sat.",
+                    "@llvm.bitreverse.",
                 )
             ):
                 return params, None, overflow_checks
@@ -419,7 +424,7 @@ class SymbolicIRVerifier:
 
                     # Handle pure bitvector LLVM intrinsics
                     m_intr = re.search(
-                        r"@(llvm\.(?:smax|smin|umax|umin|abs|bswap|ctpop|ctlz|cttz|fshl|fshr))\.[a-z0-9.]+\((.*?)\)",
+                        r"@(llvm\.(?:smax|smin|umax|umin|abs|bswap|bitreverse|ctpop|ctlz|cttz|fshl|fshr|(?:sadd|uadd|ssub|usub)\.sat))\.[a-z0-9.]+\((.*?)\)",
                         expr,
                     )
                     if m_intr:
@@ -439,6 +444,14 @@ class SymbolicIRVerifier:
                                 byte_slices = [z3.Extract(b * 8 + 7, b * 8, o1) for b in range(num_bytes)]
                                 env[var] = z3.Concat(*byte_slices)
                                 continue
+                        elif intr_name == "llvm.bitreverse" and len(intr_ops) >= 1:
+                            o1 = intr_ops[0]
+                            w = o1.size()
+                            if w >= 2:
+                                env[var] = z3.Concat(*[z3.Extract(i, i, o1) for i in range(w)])
+                            else:
+                                env[var] = o1
+                            continue
                         elif intr_name == "llvm.ctpop" and len(intr_ops) >= 1:
                             o1 = intr_ops[0]
                             w = o1.size()
@@ -475,6 +488,38 @@ class SymbolicIRVerifier:
                                     sh_mod == 0,
                                     o2,
                                     z3.LShR(o2, sh_mod) | (o1 << (z3.BitVecVal(w, w) - sh_mod)),
+                                )
+                            continue
+                        elif intr_name in ("llvm.sadd.sat", "llvm.uadd.sat", "llvm.ssub.sat", "llvm.usub.sat") and len(intr_ops) >= 2:
+                            o1, o2 = intr_ops[0], intr_ops[1]
+                            w = o1.size()
+                            smax_val = z3.BitVecVal((1 << (w - 1)) - 1, w)
+                            smin_val = z3.BitVecVal(-(1 << (w - 1)), w)
+                            umax_val = z3.BitVecVal((1 << w) - 1, w)
+                            umin_val = z3.BitVecVal(0, w)
+                            if intr_name == "llvm.sadd.sat":
+                                env[var] = z3.If(
+                                    z3.Not(z3.BVAddNoOverflow(o1, o2, True)),
+                                    smax_val,
+                                    z3.If(z3.Not(z3.BVAddNoUnderflow(o1, o2)), smin_val, o1 + o2),
+                                )
+                            elif intr_name == "llvm.uadd.sat":
+                                env[var] = z3.If(
+                                    z3.Not(z3.BVAddNoOverflow(o1, o2, False)),
+                                    umax_val,
+                                    o1 + o2,
+                                )
+                            elif intr_name == "llvm.ssub.sat":
+                                env[var] = z3.If(
+                                    z3.Not(z3.BVSubNoOverflow(o1, o2)),
+                                    smax_val,
+                                    z3.If(z3.Not(z3.BVSubNoUnderflow(o1, o2, True)), smin_val, o1 - o2),
+                                )
+                            else:
+                                env[var] = z3.If(
+                                    z3.Not(z3.BVSubNoUnderflow(o1, o2, False)),
+                                    umin_val,
+                                    o1 - o2,
                                 )
                             continue
                         elif len(intr_ops) >= 2:

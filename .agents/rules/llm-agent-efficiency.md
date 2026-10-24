@@ -1,7 +1,7 @@
 # LLM & Multi-Agent Efficiency Rules
 
 ## 1. Prompt & Token Optimization Rules
-- **Pre-Inference Compaction (`compact_ir_for_llm`)**: Strip `optnone`, `; ModuleID`, `; Function Attrs:`, and redundant blank lines before sending IR to Granite 4.0 or Llama 3.3.
+- **Pre-Inference Compaction (`compact_ir_for_llm`)**: Strip `optnone`, `; ModuleID`, `; Function Attrs:`, and redundant blank lines before sending IR to `UniversalLLMClient` (`agents/llm_client.py`).
 - **Zero-Prose Output Contract**: System prompts for `@ir-architect`, `@memory-sentinel`, and `@cegar-repair` must enforce raw LLVM IR output with zero conversational filler.
 - **Fast-Path Gating**:
   - `@memory-sentinel`: Bypass LLM inference when the IR contains no memory/pointer instructions or unsafe C library calls.

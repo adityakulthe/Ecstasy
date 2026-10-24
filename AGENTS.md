@@ -29,9 +29,9 @@
 - **Bitwidth Exactness**: Never mix `i8`, `i16`, `i32`, and `i64` in Z3 or LLVM IR without explicit `sext`, `zext`, or `trunc`.
 - **Phi & Conditional Store Merging**: When splitting basic blocks for bounds checks or evaluating `-O0` `if/else` diamond CFGs, preserve `phi` predecessor labels and merge conditional `alloca` stores using `z3.If(cond, true_val, false_val)`.
 
-### Rule 4 — Dual-Mode Offline / Online Resilience
-- **Lazy Cloud Imports**: Never import `ibm_watsonx_ai` at module top-level without a lazy loader (`get_model()`).
-- **100% Offline Determinism**: Every agent MUST succeed when `WATSONX_APIKEY` is unset by falling back to deterministic LLVM `-O2` passes and Z3 SMT symbolic verification.
+### Rule 4 — Provider-Agnostic Dual-Mode Offline / Online Resilience
+- **Vendor-Neutral LLM Adapter**: Route all optional LLM calls through `UniversalLLMClient` (`agents/llm_client.py`) using OpenAI-compatible REST endpoints (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`).
+- **100% Offline Determinism**: Every agent MUST succeed when `LLM_API_KEY` is unset by falling back to deterministic LLVM `-O2` passes and Z3 SMT symbolic verification.
 
 ### Rule 5 — The 3-Strike Root-Cause Protocol
 - **No Blind Retries**: If an optimization, verification check, or test fails 3 consecutive times, halt blind retries immediately.
