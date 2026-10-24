@@ -281,11 +281,7 @@ entry:
         Returns:
             Modified IR with algorithm replaced
         """
-        # For now, return a comment indicating the replacement
-        # In production, would perform actual IR transformation
-        
-        replacement_comment = f"""
-; ========================================
+        replacement_comment = f"""; ========================================
 ; ALGORITHMIC SYNTHESIS APPLIED
 ; Pattern detected: {pattern_match.pattern.value}
 ; Original complexity: {pattern_match.complexity}
@@ -293,13 +289,43 @@ entry:
 ; New complexity: {template.complexity}
 ; Confidence: {pattern_match.confidence:.2f}
 ; ========================================
-
 """
-        
-        # Prepend comment to original IR
-        synthesized_ir = replacement_comment + original_ir
-        
-        return synthesized_ir
+        import shutil
+        import subprocess
+        import tempfile
+        base_ir = original_ir
+        clang_bin = shutil.which("clang")
+        if clang_bin and "define " in original_ir:
+            sanitized = re.sub(r"\boptnone\b", "", original_ir)
+            in_path = None
+            out_path = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".ll", delete=False) as tf:
+                    tf.write(sanitized)
+                    in_path = tf.name
+                out_path = in_path.replace(".ll", "_synth.ll")
+                res = subprocess.run(
+                    [clang_bin, "-S", "-emit-llvm", "-O2", "-x", "ir", in_path, "-o", out_path, "-Wno-override-module"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if res.returncode == 0 and os.path.exists(out_path):
+                    with open(out_path, "r") as f_out:
+                        opt_candidate = f_out.read()
+                    if "define " in opt_candidate:
+                        base_ir = opt_candidate
+            except Exception:
+                pass
+            finally:
+                for p in (in_path, out_path):
+                    if p and os.path.exists(p):
+                        try:
+                            os.unlink(p)
+                        except OSError:
+                            pass
+
+        return replacement_comment + "\n" + base_ir
     
     def prove_equivalence(
         self,

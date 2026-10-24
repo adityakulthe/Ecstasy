@@ -199,8 +199,16 @@ class MicroArchitecturalTuner:
         # Estimate pipeline stalls
         pipeline_stalls = cache_misses * 100 + branch_mispredictions * 20
         
-        # Estimate vector utilization
-        vector_ops = ir_code.count('vector') + ir_code.count('shufflevector')
+        # Estimate vector utilization (including LLVM SIMD <N x T> types and vector ops)
+        import re
+        simd_type_matches = len(re.findall(r'<\d+\s*x\s*[a-zA-Z0-9]+>', ir_code))
+        vector_ops = (
+            ir_code.count('vector')
+            + ir_code.count('shufflevector')
+            + ir_code.count('insertelement')
+            + ir_code.count('extractelement')
+            + simd_type_matches
+        )
         vector_utilization = min(1.0, vector_ops / max(1, instruction_count))
         
         # Identify bottleneck

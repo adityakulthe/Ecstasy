@@ -213,10 +213,12 @@ Path C: Memory Safety Hardening
         return None
 
     def _run_opt_pass(self, ir_code: str, passes: str, extra_flags: Optional[List[str]] = None) -> str:
-        """Run an LLVM opt pass safely with optnone stripping and guaranteed temp-file cleanup."""
+        """Run an LLVM opt pass safely with optnone stripping, clang fallback, and guaranteed temp-file cleanup."""
         import re
+        import shutil
         opt_bin = self._find_opt_binary()
-        if not opt_bin:
+        clang_bin = shutil.which('clang') if not opt_bin else None
+        if not opt_bin and not clang_bin:
             return ir_code
 
         sanitized_ir = re.sub(r'\boptnone\b', '', ir_code)
@@ -227,10 +229,14 @@ Path C: Memory Safety Hardening
                 f.write(sanitized_ir)
                 input_path = f.name
             output_path = input_path.replace('.ll', '_opt.ll')
-            cmd = [opt_bin, f'-passes={passes}']
-            if extra_flags:
-                cmd.extend(extra_flags)
-            cmd.extend(['-S', input_path, '-o', output_path])
+            if opt_bin:
+                cmd = [opt_bin, f'-passes={passes}']
+                if extra_flags:
+                    cmd.extend(extra_flags)
+                cmd.extend(['-S', input_path, '-o', output_path])
+            else:
+                opt_flag = '-O3' if 'vector' in passes or 'unroll' in passes else '-O2'
+                cmd = [clang_bin, '-S', '-emit-llvm', opt_flag, '-x', 'ir', input_path, '-o', output_path, '-Wno-override-module']
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode == 0 and os.path.exists(output_path):
                 with open(output_path, 'r') as f_out:

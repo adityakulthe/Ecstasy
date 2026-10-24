@@ -11,7 +11,7 @@ import hashlib
 import hmac
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add parent directory to path
@@ -128,7 +128,7 @@ class SafetyVault:
         
         # Generate certificate ID
         cert_id = self._compute_hash(
-            f"{project_name}{source_hash}{ir_hash}{datetime.utcnow().isoformat()}"
+            f"{project_name}{source_hash}{ir_hash}{datetime.now(timezone.utc).isoformat()}"
         )[:16]
         
         # Build proof chain
@@ -158,8 +158,8 @@ class SafetyVault:
             proof_chain["cegar_iterations"] = len(reasoning_logs)
             proof_chain["reasoning_summary"] = [
                 {
-                    "iteration": getattr(log, "iteration", i+1),
-                    "verdict": getattr(log, "verdict", "UNKNOWN")
+                    "iteration": log.get("iteration", i + 1) if isinstance(log, dict) else getattr(log, "iteration", i + 1),
+                    "verdict": log.get("verdict", "UNKNOWN") if isinstance(log, dict) else getattr(log, "verdict", "UNKNOWN"),
                 }
                 for i, log in enumerate(reasoning_logs[:5])  # First 5 iterations
             ]
@@ -191,7 +191,7 @@ class SafetyVault:
             z3_verdict=z3_verdict,
             alive2_version=alive_ver,
             z3_version=z3_ver,
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             compliance_standards=compliance,
             proof_chain=proof_chain,
             signature="",  # Will be computed below
@@ -508,7 +508,7 @@ class SafetyVault:
             result = VerificationResult(
                 valid=valid,
                 certificate_id=cert_dict.get('certificate_id', 'unknown'),
-                verified_at=datetime.utcnow().isoformat() + "Z",
+                verified_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 issues=issues
             )
             

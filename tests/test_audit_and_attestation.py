@@ -761,3 +761,53 @@ entry:
         assert "alloca i32" not in opt_ir
         assert "mul nsw i32" in opt_ir
 
+    def test_treefinement_supervisor_clang_fallback_and_microarch_simd_detection(self):
+        from agents.treefinement_supervisor import TreefinementSupervisor
+        from agents.microarch_tuner import MicroArchitecturalTuner, CPUTarget
+
+        unopt_ir = """
+define i32 @double_it(i32 %x) optnone noinline {
+entry:
+  %slot = alloca i32, align 4
+  store i32 %x, ptr %slot, align 4
+  %v = load i32, ptr %slot, align 4
+  %res = add nsw i32 %v, %v
+  ret i32 %res
+}
+"""
+        tree_sup = TreefinementSupervisor(max_depth=2, branch_factor=3)
+        opt_ir = tree_sup._run_opt_pass(unopt_ir, "loop-unroll,slp-vectorizer")
+        assert "alloca i32" not in opt_ir
+
+        simd_ir = """
+define <4 x i32> @vec_add(<4 x i32> %a, <4 x i32> %b) {
+entry:
+  %res = add <4 x i32> %a, %b
+  ret <4 x i32> %res
+}
+"""
+        tuner = MicroArchitecturalTuner(CPUTarget.APPLE_M4)
+        sim = tuner.simulate_on_hardware(simd_ir)
+        assert sim.vector_utilization > 0.0
+
+    def test_safety_vault_handles_serialized_dict_reasoning_logs(self):
+        from agents.safety_vault import SafetyVault
+
+        vault = SafetyVault()
+        cert = vault.generate_certificate(
+            project_name="ecstasy_test",
+            source_code="int f(int x) { return x + 1; }",
+            ir_code="define i32 @f(i32 %x) { %r = add nsw i32 %x, 1 ret i32 %r }",
+            binary_path=None,
+            z3_verdict="PROVED",
+            reasoning_logs=[
+                {"iteration": 1, "verdict": "FAILED"},
+                {"iteration": 2, "verdict": "PROVED"},
+            ],
+        )
+        summary = cert.proof_chain["reasoning_summary"]
+        assert summary[0]["iteration"] == 1
+        assert summary[0]["verdict"] == "FAILED"
+        assert summary[1]["iteration"] == 2
+        assert summary[1]["verdict"] == "PROVED"
+

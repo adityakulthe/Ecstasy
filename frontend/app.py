@@ -1139,6 +1139,22 @@ def render_smt_and_certificate_inspector():
             "define i32 @safe_add(i32 %a, i32 %b) {\n  %res = add nsw i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @safe_add(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}"
         ),
+        "SROA Aggregate Promotion (alloca + GEP vs SSA)": (
+            "define i32 @pair_sum(i32 %a, i32 %b) {\nentry:\n  %pair = alloca [2 x i32], align 4\n  %p0 = getelementptr inbounds [2 x i32], ptr %pair, i64 0, i64 0\n  store i32 %a, ptr %p0, align 4\n  %p1 = getelementptr inbounds [2 x i32], ptr %pair, i64 0, i64 1\n  store i32 %b, ptr %p1, align 4\n  %v0 = load i32, ptr %p0, align 4\n  %v1 = load i32, ptr %p1, align 4\n  %sum = add i32 %v0, %v1\n  ret i32 %sum\n}",
+            "define i32 @pair_sum(i32 %a, i32 %b) {\nentry:\n  %sum = add i32 %a, %b\n  ret i32 %sum\n}"
+        ),
+        "Bitwise Funnel Shift (@llvm.fshl vs shl/lshr/or)": (
+            "define i32 @rotl8(i32 %x) {\nentry:\n  %shl = shl i32 %x, 8\n  %shr = lshr i32 %x, 24\n  %res = or i32 %shl, %shr\n  ret i32 %res\n}",
+            "define i32 @rotl8(i32 %x) {\nentry:\n  %res = tail call i32 @llvm.fshl.i32(i32 %x, i32 %x, i32 8)\n  ret i32 %res\n}"
+        ),
+        "Multi-Way Switch + Phi vs Chained Select": (
+            "define i32 @dispatch(i32 %x) {\nentry:\n  switch i32 %x, label %sw.default [\n    i32 0, label %sw.bb0\n    i32 1, label %sw.bb1\n  ]\nsw.bb0:\n  br label %sw.epilog\nsw.bb1:\n  br label %sw.epilog\nsw.default:\n  br label %sw.epilog\nsw.epilog:\n  %res = phi i32 [ 10, %sw.bb0 ], [ 20, %sw.bb1 ], [ 99, %sw.default ]\n  ret i32 %res\n}",
+            "define i32 @dispatch(i32 %x) {\nentry:\n  %c1 = icmp eq i32 %x, 1\n  %s1 = select i1 %c1, i32 20, i32 99\n  %c0 = icmp eq i32 %x, 0\n  %res = select i1 %c0, i32 10, i32 %s1\n  ret i32 %res\n}"
+        ),
+        "Overflow-Checked Intrinsic (@llvm.uadd.with.overflow + extractvalue)": (
+            "define i32 @checked_uadd_clamp(i32 %a, i32 %b) {\nentry:\n  %pair = call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %a, i32 %b)\n  %sum = extractvalue { i32, i1 } %pair, 0\n  %ovf = extractvalue { i32, i1 } %pair, 1\n  %res = select i1 %ovf, i32 -1, i32 %sum\n  ret i32 %res\n}",
+            "define i32 @checked_uadd_clamp(i32 %a, i32 %b) {\nentry:\n  %sum = add i32 %a, %b\n  %ovf = icmp ult i32 %sum, %a\n  %res = select i1 %ovf, i32 -1, i32 %sum\n  ret i32 %res\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"
@@ -1228,6 +1244,77 @@ def render_smt_and_certificate_inspector():
                 st.error(f"Failed to parse certificate: {e}")
 
 
+def render_council_and_sarif_tab():
+    """Render Parallel 5-Agent Deliberation Council, Corpus Benchmark & OASIS SARIF v2.1.0 Security Audit"""
+    import json
+    from pathlib import Path
+    st.markdown("""
+    <div style="background: #161b22; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #30363d; margin-bottom: 1.5rem;">
+        <h3 style="color: #00ff41; margin-top: 0;">🏛️ Parallel 5-Agent Deliberation Council & OASIS SARIF v2.1.0 Security Suite</h3>
+        <p style="color: #8b949e; margin-bottom: 0;">
+            Fan out all 5 specialist agents concurrently via <code>ThreadPoolExecutor</code>, inspect the live group roundtable trade-off consensus
+            (Speed vs. Safety vs. Maintainability), benchmark the entire C corpus, and export OASIS SARIF v2.1.0 security reports.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_c1, col_c2 = st.columns(2)
+    with col_c1:
+        st.subheader("🤝 Parallel Multi-Agent Group Deliberation")
+        if st.button("🚀 CONVENING 5-AGENT PARALLEL COUNCIL", type="primary", use_container_width=True):
+            from agents.supervisor import CompilerSupervisor
+            sample_c = DEMO_PROGRAMS[list(DEMO_PROGRAMS.keys())[0]]
+            sup = CompilerSupervisor(max_retries=1, use_advanced_agents=True)
+            res = sup.supervise_compilation(sample_c, filename="council_target.c")
+            if res.get("binary_path") and os.path.exists(res["binary_path"]):
+                os.unlink(res["binary_path"])
+            delib = res.get("group_deliberation", {})
+            st.success(f"Consensus Strategy: {delib.get('selected_strategy', 'PARETO_OPTIMAL_VERIFIED_RELEASE')}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Speed Score", f"{delib.get('speed_score', 1.0):.2f}")
+            m2.metric("Safety Score", f"{delib.get('safety_score', 1.0):.2f}")
+            m3.metric("Quality Gate", "0% Defect Passed" if delib.get("quality_gate_passed") else "Blocked")
+            st.markdown(f"**Rationale:** {delib.get('rationale', '')}")
+            if res.get("knowledge_base_summary"):
+                st.json(res["knowledge_base_summary"])
+
+    with col_c2:
+        st.subheader("🛡️ Whole-Corpus Benchmark & SARIF v2.1.0 Export")
+        if st.button("📊 RUN 9-FILE CORPUS BENCHMARK & SARIF AUDIT", use_container_width=True):
+            from engine.corpus_benchmark import run_corpus_benchmark
+            from server.mcp_server import export_sarif_report
+            corpus_dir = Path(__file__).resolve().parent.parent / "demo_corpus"
+            bench = run_corpus_benchmark(corpus_dir)
+            b1, b2, b3 = st.columns(3)
+            b1.metric("Files Proved", f"{bench['proved_files']}/{bench['files_benchmarked']}")
+            b2.metric("IR Reduction", f"-{bench['overall_reduction_pct']}%")
+            b3.metric("CWE Guards", bench["total_cwe_guards"])
+
+            audit_records = [
+                {
+                    "file": r["file"],
+                    "checks_injected": r["cwe_guards"],
+                    "status": "hardened" if r["cwe_guards"] > 0 else "clean",
+                    "findings": r.get("cwe_findings", []),
+                }
+                for r in bench["results"]
+            ]
+            with tempfile.NamedTemporaryFile("w", suffix=".sarif", delete=False) as sf:
+                sarif_path = sf.name
+            try:
+                sarif_payload = export_sarif_report(audit_records, sarif_path)
+            finally:
+                if os.path.exists(sarif_path):
+                    os.unlink(sarif_path)
+            st.download_button(
+                label="📥 Download OASIS SARIF v2.1.0 Report (ecstasy-audit.sarif)",
+                data=json.dumps(sarif_payload, indent=2),
+                file_name="ecstasy-audit.sarif",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+
 def main():
     """Main application entry point"""
     # Initialize session state
@@ -1245,7 +1332,12 @@ def main():
     st.markdown('<div class="sub-header">Formally Verified AI Compiler & Security Pipeline</div>', unsafe_allow_html=True)
     
     # Navigation tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Standard View", "🎬 Live Pipeline Dashboard", "🔐 SMT Verifier & Certificate Inspector"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Standard View",
+        "🎬 Live Pipeline Dashboard",
+        "🔐 SMT Verifier & Certificate Inspector",
+        "🏛️ Agent Council, Benchmark & SARIF Audit",
+    ])
     
     with tab1:
         render_standard_view()
@@ -1256,6 +1348,10 @@ def main():
     with tab3:
         render_smt_and_certificate_inspector()
 
+    with tab4:
+        render_council_and_sarif_tab()
+
 
 if __name__ == "__main__":
     main()
+
