@@ -988,3 +988,59 @@ entry:
                 assert "WATSONX_APIKEY" not in txt, f"Found WATSONX_APIKEY in {path}"
                 assert "Made with Bob" not in txt, f"Found Made with Bob in {path}"
 
+    def test_simd_vector_lane_parallel_and_reduction_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. Scalar 4-way sum vs. SIMD <4 x i32> insertelement + @llvm.vector.reduce.add.v4i32
+        src_scalar_sum = """
+        define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {
+        entry:
+          %s0 = add i32 %a, %b
+          %s1 = add i32 %s0, %c
+          %s2 = add i32 %s1, %d
+          ret i32 %s2
+        }
+        """
+        tgt_simd_sum = """
+        declare i32 @llvm.vector.reduce.add.v4i32(<4 x i32>)
+        define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {
+        entry:
+          %v0 = insertelement <4 x i32> poison, i32 %a, i64 0
+          %v1 = insertelement <4 x i32> %v0, i32 %b, i64 1
+          %v2 = insertelement <4 x i32> %v1, i32 %c, i64 2
+          %v3 = insertelement <4 x i32> %v2, i32 %d, i64 3
+          %res = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %v3)
+          ret i32 %res
+        }
+        """
+        res_sum = verify_ir_equivalence(src_scalar_sum, tgt_simd_sum)
+        assert res_sum.verdict == "PROVED"
+        assert res_sum.proved is True
+
+        # 2. Lane-parallel vector add + shufflevector + extractelement equivalence
+        src_vec_op = """
+        define i32 @dot_like(<2 x i32> %x, <2 x i32> %y) {
+        entry:
+          %sum = add <2 x i32> %x, %y
+          %swapped = shufflevector <2 x i32> %sum, <2 x i32> poison, <2 x i32> <i32 1, i32 0>
+          %e0 = extractelement <2 x i32> %swapped, i64 0
+          %e1 = extractelement <2 x i32> %swapped, i64 1
+          %tot = add i32 %e0, %e1
+          ret i32 %tot
+        }
+        """
+        tgt_vec_op = """
+        declare i32 @llvm.vector.reduce.add.v2i32(<2 x i32>)
+        define i32 @dot_like(<2 x i32> %x, <2 x i32> %y) {
+        entry:
+          %rx = call i32 @llvm.vector.reduce.add.v2i32(<2 x i32> %x)
+          %ry = call i32 @llvm.vector.reduce.add.v2i32(<2 x i32> %y)
+          %tot = add i32 %rx, %ry
+          ret i32 %tot
+        }
+        """
+        res_vec = verify_ir_equivalence(src_vec_op, tgt_vec_op)
+        assert res_vec.verdict == "PROVED"
+        assert res_vec.proved is True
+
+

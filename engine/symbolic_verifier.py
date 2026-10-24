@@ -99,7 +99,7 @@ class SymbolicIRVerifier:
         and both single-line and multi-line function definitions.
         Returns: Dict of func_name -> (return_type, raw_params, body)
         """
-        pattern = r"define\s+(?:[\w]+\s+)*?([\w*]+)\s+@([\w.]+)\s*\((.*?)\)[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}"
+        pattern = r"define\s+(?:[\w]+\s+)*?(<[^>\n]+>|[\w*]+)\s+@([\w.]+)\s*\((.*?)\)[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}"
         matches = re.findall(pattern, ir_text, re.DOTALL)
         funcs = {}
         for ret_ty, name, params, body in matches:
@@ -226,6 +226,15 @@ class SymbolicIRVerifier:
                 p = p.strip()
                 if not p:
                     continue
+                m_vec_p = re.match(r"<\s*(\d+)\s*x\s*(i\d+)\s*>\s*(?:[\w]+\s+)*(%[\w.]+)", p)
+                if m_vec_p:
+                    n_lanes = int(m_vec_p.group(1))
+                    elem_w = self._parse_width(m_vec_p.group(2))
+                    name = m_vec_p.group(3)
+                    params[name] = [
+                        z3.BitVec(f"arg_{name.lstrip('%')}_lane{i}", elem_w) for i in range(n_lanes)
+                    ]
+                    continue
                 parts = p.split()
                 if len(parts) >= 2:
                     ty = parts[0]
@@ -295,6 +304,7 @@ class SymbolicIRVerifier:
                     "@llvm.ssub.sat.",
                     "@llvm.usub.sat.",
                     "@llvm.bitreverse.",
+                    "@llvm.vector.reduce.",
                 )
             ):
                 return params, None, overflow_checks
@@ -385,6 +395,81 @@ class SymbolicIRVerifier:
                 is_nsw = "nsw" in tokens
                 is_nuw = "nuw" in tokens
 
+                if op == "insertelement":
+                    m_ins = re.match(
+                        r"insertelement\s+<\s*(\d+)\s*x\s*(i\d+)\s*>\s*([^,]+),\s*(i\d+)\s+([^,]+),\s*i\d+\s+(-?\d+)",
+                        expr,
+                    )
+                    if m_ins:
+                        n_lanes = int(m_ins.group(1))
+                        elem_w = self._parse_width(m_ins.group(2))
+                        vec_tok = m_ins.group(3).strip().split()[-1]
+                        val_tok = m_ins.group(5).strip().split()[-1]
+                        idx = int(m_ins.group(6))
+                        base_vec = (
+                            list(env[vec_tok])
+                            if (vec_tok in env and isinstance(env[vec_tok], list))
+                            else [z3.BitVecVal(0, elem_w) for _ in range(n_lanes)]
+                        )
+                        val_bv = (
+                            env[val_tok]
+                            if val_tok in env
+                            else (z3.BitVecVal(int(val_tok), elem_w) if val_tok.lstrip("-").isdigit() else None)
+                        )
+                        if val_bv is not None and 0 <= idx < len(base_vec):
+                            base_vec[idx] = val_bv
+                            env[var] = base_vec
+                            continue
+                    return params, None, overflow_checks
+
+                if op == "extractelement":
+                    m_ext = re.match(
+                        r"extractelement\s+<\s*(\d+)\s*x\s*(i\d+)\s*>\s*([^,]+),\s*i\d+\s+(-?\d+)",
+                        expr,
+                    )
+                    if m_ext:
+                        vec_tok = m_ext.group(3).strip().split()[-1]
+                        idx = int(m_ext.group(4))
+                        if vec_tok in env and isinstance(env[vec_tok], list) and 0 <= idx < len(env[vec_tok]):
+                            env[var] = env[vec_tok][idx]
+                            continue
+                    return params, None, overflow_checks
+
+                if op == "shufflevector":
+                    m_shuf = re.match(
+                        r"shufflevector\s+<\s*(\d+)\s*x\s*(i\d+)\s*>\s*([^,]+),\s*<\s*\d+\s*x\s*i\d+\s*>\s*([^,]+),\s*<\s*(\d+)\s*x\s*i\d+\s*>\s*(.+)",
+                        expr,
+                    )
+                    if m_shuf:
+                        n_in = int(m_shuf.group(1))
+                        elem_w = self._parse_width(m_shuf.group(2))
+                        v1_tok = m_shuf.group(3).strip().split()[-1]
+                        v2_tok = m_shuf.group(4).strip().split()[-1]
+                        n_out = int(m_shuf.group(5))
+                        mask_str = m_shuf.group(6).strip()
+                        v1_list = (
+                            list(env[v1_tok])
+                            if (v1_tok in env and isinstance(env[v1_tok], list))
+                            else [z3.BitVecVal(0, elem_w) for _ in range(n_in)]
+                        )
+                        v2_list = (
+                            list(env[v2_tok])
+                            if (v2_tok in env and isinstance(env[v2_tok], list))
+                            else [z3.BitVecVal(0, elem_w) for _ in range(n_in)]
+                        )
+                        combined = v1_list + v2_list
+                        if mask_str == "zeroinitializer":
+                            env[var] = [combined[0] for _ in range(n_out)]
+                            continue
+                        mask_idxs = [
+                            int(x) if x.lstrip("-").isdigit() else 0
+                            for x in re.findall(r"i\d+\s+(-?\d+|undef|poison)", mask_str)
+                        ]
+                        if len(mask_idxs) == n_out and all(0 <= m < len(combined) for m in mask_idxs):
+                            env[var] = [combined[m] for m in mask_idxs]
+                            continue
+                    return params, None, overflow_checks
+
                 if op == "insertvalue":
                     rest = re.sub(r"^insertvalue\s+(?:\{[^}]+\}|\[[^\]]+\])\s*", "", expr).strip()
                     parts = [p.strip() for p in rest.split(",")]
@@ -426,6 +511,43 @@ class SymbolicIRVerifier:
                     return params, None, overflow_checks
 
                 if op == "call":
+                    # Handle horizontal SIMD vector reduction intrinsics @llvm.vector.reduce.*
+                    m_vred = re.search(
+                        r"@llvm\.vector\.reduce\.(add|mul|and|or|xor|smax|smin|umax|umin)\.[a-z0-9.]+\((.*?)\)",
+                        expr,
+                    )
+                    if m_vred:
+                        red_op = m_vred.group(1)
+                        arg_tokens = m_vred.group(2).replace(",", " ").split()
+                        vec_reg = next(
+                            (t for t in arg_tokens if t.startswith("%") and t in env and isinstance(env[t], list)),
+                            None,
+                        )
+                        if vec_reg and env[vec_reg]:
+                            lanes = env[vec_reg]
+                            acc = lanes[0]
+                            for ln in lanes[1:]:
+                                if red_op == "add":
+                                    acc = acc + ln
+                                elif red_op == "mul":
+                                    acc = acc * ln
+                                elif red_op == "and":
+                                    acc = acc & ln
+                                elif red_op == "or":
+                                    acc = acc | ln
+                                elif red_op == "xor":
+                                    acc = acc ^ ln
+                                elif red_op == "smax":
+                                    acc = z3.If(acc > ln, acc, ln)
+                                elif red_op == "smin":
+                                    acc = z3.If(acc < ln, acc, ln)
+                                elif red_op == "umax":
+                                    acc = z3.If(z3.UGT(acc, ln), acc, ln)
+                                elif red_op == "umin":
+                                    acc = z3.If(z3.ULT(acc, ln), acc, ln)
+                            env[var] = acc
+                            continue
+
                     # Handle overflow-checked arithmetic intrinsics returning { iN, i1 }
                     m_ovf = re.search(
                         r"@(llvm\.(?:sadd|uadd|ssub|usub|smul|umul)\.with\.overflow)\.[a-z0-9.]+\((.*?)\)",
@@ -667,6 +789,25 @@ class SymbolicIRVerifier:
 
                 operands = self._parse_operands(tokens[1:], env)
 
+                m_vty = re.search(r"<\s*(\d+)\s*x\s*(i\d+)\s*>", expr)
+                if m_vty and len(operands) < 2 and op in (
+                    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem", "shl", "lshr", "ashr", "and", "or", "xor"
+                ):
+                    v_lanes = int(m_vty.group(1))
+                    v_w = self._parse_width(m_vty.group(2))
+                    after_ty = expr[m_vty.end():].strip()
+                    if "zeroinitializer" in after_ty and len(operands) == 1 and isinstance(operands[0], list):
+                        operands.append([z3.BitVecVal(0, v_w) for _ in range(v_lanes)])
+                    else:
+                        m_vlit = re.search(r"<([^>]+)>", after_ty)
+                        if m_vlit and len(operands) == 1 and isinstance(operands[0], list):
+                            lit_vals = [
+                                z3.BitVecVal(int(c), v_w)
+                                for c in re.findall(r"i\d+\s+(-?\d+)", m_vlit.group(1))
+                            ]
+                            if len(lit_vals) == v_lanes:
+                                operands.append(lit_vals)
+
                 if op == "select" and len(operands) >= 3:
                     cond, tv, fv = operands[0], operands[1], operands[2]
                     if hasattr(tv, "size") and hasattr(fv, "size"):
@@ -680,6 +821,35 @@ class SymbolicIRVerifier:
 
                 if len(operands) >= 2:
                     o1, o2 = operands[0], operands[1]
+                    if isinstance(o1, list) and isinstance(o2, list) and len(o1) == len(o2):
+                        if op == "add":
+                            env[var] = [a + b for a, b in zip(o1, o2)]
+                        elif op == "sub":
+                            env[var] = [a - b for a, b in zip(o1, o2)]
+                        elif op == "mul":
+                            env[var] = [a * b for a, b in zip(o1, o2)]
+                        elif op == "sdiv":
+                            env[var] = [a / b for a, b in zip(o1, o2)]
+                        elif op == "udiv":
+                            env[var] = [z3.UDiv(a, b) for a, b in zip(o1, o2)]
+                        elif op == "srem":
+                            env[var] = [z3.SRem(a, b) for a, b in zip(o1, o2)]
+                        elif op == "urem":
+                            env[var] = [z3.URem(a, b) for a, b in zip(o1, o2)]
+                        elif op == "shl":
+                            env[var] = [a << b for a, b in zip(o1, o2)]
+                        elif op == "lshr":
+                            env[var] = [z3.LShR(a, b) for a, b in zip(o1, o2)]
+                        elif op == "ashr":
+                            env[var] = [a >> b for a, b in zip(o1, o2)]
+                        elif op == "and":
+                            env[var] = [a & b for a, b in zip(o1, o2)]
+                        elif op == "or":
+                            env[var] = [a | b for a, b in zip(o1, o2)]
+                        elif op == "xor":
+                            env[var] = [a ^ b for a, b in zip(o1, o2)]
+                        continue
+
                     if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BitVecRef) and o2.size() == 1:
                         o1 = z3.If(o1, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
                     elif isinstance(o2, z3.BoolRef) and isinstance(o1, z3.BitVecRef) and o1.size() == 1:
@@ -832,28 +1002,49 @@ class SymbolicIRVerifier:
             p_opt_items = list(p_opt.values())
             if len(p_orig_items) == len(p_opt_items):
                 for v_orig, v_opt in zip(p_orig_items, p_opt_items):
-                    if hasattr(v_orig, "size") and hasattr(v_opt, "size") and v_orig.size() == v_opt.size():
+                    if isinstance(v_orig, list) and isinstance(v_opt, list) and len(v_orig) == len(v_opt):
+                        for ln_o, ln_t in zip(v_orig, v_opt):
+                            if hasattr(ln_o, "size") and hasattr(ln_t, "size") and ln_o.size() == ln_t.size():
+                                solver.add(ln_o == ln_t)
+                    elif hasattr(v_orig, "size") and hasattr(v_opt, "size") and v_orig.size() == v_opt.size():
                         solver.add(v_orig == v_opt)
             else:
                 for pname in p_orig:
                     if pname in p_opt:
-                        solver.add(p_orig[pname] == p_opt[pname])
+                        v_orig, v_opt = p_orig[pname], p_opt[pname]
+                        if isinstance(v_orig, list) and isinstance(v_opt, list) and len(v_orig) == len(v_opt):
+                            for ln_o, ln_t in zip(v_orig, v_opt):
+                                solver.add(ln_o == ln_t)
+                        else:
+                            solver.add(v_orig == v_opt)
 
             # 1. Check return value equivalence
             solver.push()
-            solver.add(r_orig != r_opt)
+            if isinstance(r_orig, list) and isinstance(r_opt, list) and len(r_orig) == len(r_opt):
+                solver.add(z3.Or(*[a != b for a, b in zip(r_orig, r_opt)]))
+            else:
+                solver.add(r_orig != r_opt)
 
             check_res = solver.check()
             if check_res == z3.sat:
                 m = solver.model()
                 input_vals = {}
                 for pname, bv in p_orig.items():
-                    val = m[bv]
-                    w_lbl = f"i{bv.size()}" if hasattr(bv, "size") else "i32"
-                    input_vals[f"{w_lbl} {pname}"] = val.as_long() if val is not None else 0
+                    if isinstance(bv, list):
+                        input_vals[f"vec {pname}"] = [
+                            m[ln].as_long() if m[ln] is not None else 0 for ln in bv
+                        ]
+                    else:
+                        val = m[bv]
+                        w_lbl = f"i{bv.size()}" if hasattr(bv, "size") else "i32"
+                        input_vals[f"{w_lbl} {pname}"] = val.as_long() if val is not None else 0
 
-                src_out = m.eval(r_orig)
-                tgt_out = m.eval(r_opt)
+                if isinstance(r_orig, list) and isinstance(r_opt, list):
+                    src_out = [str(m.eval(ln)) for ln in r_orig]
+                    tgt_out = [str(m.eval(ln)) for ln in r_opt]
+                else:
+                    src_out = m.eval(r_orig)
+                    tgt_out = m.eval(r_opt)
 
                 cex = Counterexample(
                     function_name=fname,

@@ -616,10 +616,10 @@ def render_live_pipeline_dashboard():
             ("🔍", "Code Analyzer", "Analyzing input code structure"),
             ("🧠", "IR Generator", "Compiling to LLVM IR"),
             ("🎯", "Pattern Detector", "Identifying optimization opportunities"),
-            ("🤖", "Bob @ir-architect", "Proposing IR transformations"),
+            ("🤖", "@ir-architect", "Proposing IR transformations"),
             ("📊", "Performance Estimator", "Estimating speedup potential"),
             ("🔧", "Transformation Applier", "Applying optimizations"),
-            ("🛡️", "Bob @memory-sentinel", "Checking memory safety"),
+            ("🛡️", "@memory-sentinel", "Checking memory safety"),
             ("✅", "Alive2 Verifier", "Formal verification with Z3"),
             ("📈", "Results Aggregator", "Compiling final report")
         ]
@@ -1154,6 +1154,10 @@ def render_smt_and_certificate_inspector():
         "Overflow-Checked Intrinsic (@llvm.uadd.with.overflow + extractvalue)": (
             "define i32 @checked_uadd_clamp(i32 %a, i32 %b) {\nentry:\n  %pair = call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %a, i32 %b)\n  %sum = extractvalue { i32, i1 } %pair, 0\n  %ovf = extractvalue { i32, i1 } %pair, 1\n  %res = select i1 %ovf, i32 -1, i32 %sum\n  ret i32 %res\n}",
             "define i32 @checked_uadd_clamp(i32 %a, i32 %b) {\nentry:\n  %sum = add i32 %a, %b\n  %ovf = icmp ult i32 %sum, %a\n  %res = select i1 %ovf, i32 -1, i32 %sum\n  ret i32 %res\n}"
+        ),
+        "SIMD <4 x i32> SLP Vector Reduction (@llvm.vector.reduce.add)": (
+            "define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {\nentry:\n  %s0 = add i32 %a, %b\n  %s1 = add i32 %s0, %c\n  %s2 = add i32 %s1, %d\n  ret i32 %s2\n}",
+            "define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {\nentry:\n  %v0 = insertelement <4 x i32> poison, i32 %a, i64 0\n  %v1 = insertelement <4 x i32> %v0, i32 %b, i64 1\n  %v2 = insertelement <4 x i32> %v1, i32 %c, i64 2\n  %v3 = insertelement <4 x i32> %v2, i32 %d, i64 3\n  %res = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %v3)\n  ret i32 %res\n}"
         ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
