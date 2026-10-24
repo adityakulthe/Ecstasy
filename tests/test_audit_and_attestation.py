@@ -1154,5 +1154,53 @@ entry:
         assert res_bug.proved is False
         assert res_bug.counterexample is not None
 
+    def test_qf_abv_symbolic_array_dynamic_gep_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
 
+        # 1. Dynamic store-to-load forwarding with non-aliasing store at idx + 1 -> PROVED
+        src_non_alias = """
+        define i32 @dyn_array_forward(i64 %idx, i32 %val) {
+        entry:
+          %arr = alloca [16 x i32], align 16
+          %p_i = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %idx
+          store i32 %val, ptr %p_i, align 4
+          %next = add i64 %idx, 1
+          %p_next = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %next
+          store i32 99, ptr %p_next, align 4
+          %loaded = load i32, ptr %p_i, align 4
+          ret i32 %loaded
+        }
+        """
+        tgt_forwarded = """
+        define i32 @dyn_array_forward(i64 %idx, i32 %val) {
+        entry:
+          ret i32 %val
+        }
+        """
+        res_ok = verify_ir_equivalence(src_non_alias, tgt_forwarded)
+        assert res_ok.verdict == "PROVED"
+        assert res_ok.proved is True
 
+        # 2. Potentially aliasing symbolic indices %i and %j where %i == %j overwrites %a with %b -> FAILED
+        src_alias = """
+        define i32 @may_alias(i64 %i, i64 %j, i32 %a, i32 %b) {
+        entry:
+          %arr = alloca [16 x i32], align 16
+          %pi = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %i
+          store i32 %a, ptr %pi, align 4
+          %pj = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %j
+          store i32 %b, ptr %pj, align 4
+          %v = load i32, ptr %pi, align 4
+          ret i32 %v
+        }
+        """
+        tgt_bad_forward = """
+        define i32 @may_alias(i64 %i, i64 %j, i32 %a, i32 %b) {
+        entry:
+          ret i32 %a
+        }
+        """
+        res_alias = verify_ir_equivalence(src_alias, tgt_bad_forward)
+        assert res_alias.verdict == "FAILED"
+        assert res_alias.proved is False
+        assert res_alias.counterexample is not None

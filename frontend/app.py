@@ -1167,6 +1167,10 @@ def render_smt_and_certificate_inspector():
             "define i32 @scale(i32 %v, i32 %k) {\nentry:\n  %p = mul i32 %v, %k\n  ret i32 %p\n}\ndefine i32 @caller(i32 %x) {\nentry:\n  %r = call i32 @scale(i32 %x, i32 3)\n  %out = add i32 %r, 1\n  ret i32 %out\n}",
             "define i32 @caller(i32 %x) {\nentry:\n  %p = mul i32 %x, 3\n  %out = add i32 %p, 1\n  ret i32 %out\n}"
         ),
+        "QF_ABV Dynamic Array Load/Store Forwarding (z3.Store / z3.Select)": (
+            "define i32 @dyn_array_forward(i64 %idx, i32 %val) {\nentry:\n  %arr = alloca [16 x i32], align 16\n  %p_i = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %idx\n  store i32 %val, ptr %p_i, align 4\n  %next = add i64 %idx, 1\n  %p_next = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %next\n  store i32 99, ptr %p_next, align 4\n  %loaded = load i32, ptr %p_i, align 4\n  ret i32 %loaded\n}",
+            "define i32 @dyn_array_forward(i64 %idx, i32 %val) {\nentry:\n  ret i32 %val\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"

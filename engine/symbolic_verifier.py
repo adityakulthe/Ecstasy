@@ -193,6 +193,45 @@ class SymbolicIRVerifier:
         if new_val is None:
             return
 
+        if isinstance(new_val, z3.BoolRef):
+            new_val = z3.If(new_val, z3.BitVecVal(1, val_width), z3.BitVecVal(0, val_width))
+        elif isinstance(new_val, z3.BitVecRef) and new_val.size() != val_width:
+            if new_val.size() < val_width:
+                new_val = z3.SignExt(val_width - new_val.size(), new_val)
+            else:
+                new_val = z3.Extract(val_width - 1, 0, new_val)
+
+        # QF_ABV symbolic array store for dynamic-index getelementptr
+        if (
+            ptr_reg in env
+            and isinstance(env[ptr_reg], tuple)
+            and len(env[ptr_reg]) == 3
+            and env[ptr_reg][0] == "__z3arr__"
+        ):
+            _, arr_Key, idx_bv64 = env[ptr_reg]
+            prev_arr = memory_store.get(arr_Key)
+            if not isinstance(prev_arr, z3.ArrayRef):
+                prev_arr = z3.Array(
+                    f"arr_{arr_Key}", z3.BitVecSort(64), z3.BitVecSort(val_width)
+                )
+            updated_arr = z3.Store(prev_arr, idx_bv64, new_val)
+            if (
+                last_cond is not None
+                and last_br_labels is not None
+                and current_label is not None
+            ):
+                true_lbl = last_br_labels[0].lstrip("%")
+                false_lbl = last_br_labels[1].lstrip("%")
+                cond_bool = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
+                if current_label == false_lbl:
+                    memory_store[arr_Key] = z3.If(cond_bool, prev_arr, updated_arr)
+                    return
+                elif current_label == true_lbl:
+                    memory_store[arr_Key] = z3.If(cond_bool, updated_arr, prev_arr)
+                    return
+            memory_store[arr_Key] = updated_arr
+            return
+
         prev_val = memory_store.get(slot_key)
         if (
             prev_val is not None
@@ -816,27 +855,73 @@ class SymbolicIRVerifier:
                     continue
 
                 if op == "getelementptr":
-                    # Support local alloca SROA (Scalar Replacement of Aggregates) with constant indices
+                    # Support local alloca SROA (constant indices) and QF_ABV symbolic arrays (dynamic register indices)
                     clean_toks = [t.rstrip(",").strip() for t in tokens[1:]]
                     base_ptr = None
                     idx_tokens: List[str] = []
+                    has_dynamic_idx = False
+                    idx_bv64 = z3.BitVecVal(0, 64)
                     for t in clean_toks:
                         if base_ptr is None:
                             if t.startswith("%"):
                                 base_ptr = t
                         else:
                             if t.startswith("%"):
-                                # Dynamic register index into array -> unsupported for flat bitvector unrolling
-                                return params, None, overflow_checks
+                                has_dynamic_idx = True
+                                idx_tokens.append(t)
+                                if t in env:
+                                    iv = env[t]
+                                    if isinstance(iv, z3.BoolRef):
+                                        iv = z3.If(iv, z3.BitVecVal(1, 64), z3.BitVecVal(0, 64))
+                                    elif isinstance(iv, z3.BitVecRef):
+                                        if iv.size() < 64:
+                                            iv = z3.SignExt(64 - iv.size(), iv)
+                                        elif iv.size() > 64:
+                                            iv = z3.Extract(63, 0, iv)
+                                        idx_bv64 = idx_bv64 + iv
+                                    else:
+                                        return params, None, overflow_checks
+                                else:
+                                    return params, None, overflow_checks
                             elif t.lstrip("-").isdigit():
                                 idx_tokens.append(t)
-                    if base_ptr and (
-                        base_ptr in local_allocas
-                        or (base_ptr in env and isinstance(env[base_ptr], str) and env[base_ptr].startswith("__gep__"))
+                                idx_bv64 = idx_bv64 + z3.BitVecVal(int(t), 64)
+
+                    if not base_ptr:
+                        return params, None, overflow_checks
+
+                    is_prev_z3arr = (
+                        base_ptr in env
+                        and isinstance(env[base_ptr], tuple)
+                        and len(env[base_ptr]) == 3
+                        and env[base_ptr][0] == "__z3arr__"
+                    )
+                    if (
+                        not has_dynamic_idx
+                        and not is_prev_z3arr
+                        and (
+                            base_ptr in local_allocas
+                            or (base_ptr in env and isinstance(env[base_ptr], str) and env[base_ptr].startswith("__gep__"))
+                        )
                     ):
                         root_key = env[base_ptr] if (base_ptr in env and isinstance(env[base_ptr], str)) else f"__gep__{base_ptr}"
                         gep_key = f"{root_key}_{'_'.join(idx_tokens)}" if idx_tokens else root_key
                         env[var] = gep_key
+                        local_allocas.add(var)
+                        continue
+
+                    if is_prev_z3arr:
+                        _, arr_key, base_idx_bv64 = env[base_ptr]
+                        env[var] = ("__z3arr__", arr_key, base_idx_bv64 + idx_bv64)
+                        local_allocas.add(var)
+                        continue
+                    elif base_ptr in local_allocas or base_ptr in params:
+                        if base_ptr in params and base_ptr not in local_allocas:
+                            param_pos = list(params.keys()).index(base_ptr)
+                            arr_key = f"param_arr_{param_pos}"
+                        else:
+                            arr_key = f"local_arr_{base_ptr.lstrip('%')}"
+                        env[var] = ("__z3arr__", arr_key, idx_bv64)
                         local_allocas.add(var)
                         continue
                     return params, None, overflow_checks
@@ -850,6 +935,22 @@ class SymbolicIRVerifier:
                             ptr_reg = t
                             break
                     target_width = self._parse_width(clean_tokens[1]) if len(clean_tokens) > 1 else 32
+                    if (
+                        ptr_reg
+                        and ptr_reg in env
+                        and isinstance(env[ptr_reg], tuple)
+                        and len(env[ptr_reg]) == 3
+                        and env[ptr_reg][0] == "__z3arr__"
+                    ):
+                        _, arr_key, idx_bv64 = env[ptr_reg]
+                        arr_ref = memory_store.get(arr_key)
+                        if not isinstance(arr_ref, z3.ArrayRef):
+                            arr_ref = z3.Array(
+                                f"arr_{arr_key}", z3.BitVecSort(64), z3.BitVecSort(target_width)
+                            )
+                            memory_store[arr_key] = arr_ref
+                        env[var] = z3.Select(arr_ref, idx_bv64)
+                        continue
                     slot_key = ptr_reg
                     if ptr_reg and ptr_reg in env and isinstance(env[ptr_reg], str) and env[ptr_reg].startswith("__gep__"):
                         slot_key = env[ptr_reg]
