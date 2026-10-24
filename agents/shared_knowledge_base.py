@@ -447,4 +447,3 @@ if __name__ == "__main__":
     # Print summary
     kb.print_summary()
 
-# Made with Bob

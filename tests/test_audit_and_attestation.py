@@ -927,3 +927,64 @@ entry:
         assert "sarif" in audit
         assert audit["sarif"]["version"] == "2.1.0"
 
+    def test_llvm19_flags_and_insertvalue_aggregate_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. LLVM 19/21 flags: or disjoint, zext nneg, icmp samesign
+        src_flags = """
+        define i64 @bit_pack(i32 %x) {
+        entry:
+          %masked = and i32 %x, 255
+          %cmp = icmp ult i32 %masked, 128
+          %sel = select i1 %cmp, i32 %masked, i32 0
+          %or_val = add i32 %sel, 256
+          %ext = zext i32 %or_val to i64
+          ret i64 %ext
+        }
+        """
+        tgt_flags = """
+        define i64 @bit_pack(i32 %x) {
+        entry:
+          %masked = and i32 %x, 255
+          %cmp = icmp samesign ult i32 %masked, 128
+          %sel = select i1 %cmp, i32 %masked, i32 0
+          %or_val = or disjoint i32 %sel, 256
+          %ext = zext nneg i32 %or_val to i64
+          ret i64 %ext
+        }
+        """
+        res_flags = verify_ir_equivalence(src_flags, tgt_flags)
+        assert res_flags.verdict == "PROVED"
+        assert res_flags.proved is True
+
+        # 2. Aggregate insertvalue + extractvalue equivalence
+        src_agg = """
+        define i32 @pair_sum(i32 %a, i32 %b) {
+        entry:
+          %s = add i32 %a, %b
+          ret i32 %s
+        }
+        """
+        tgt_agg = """
+        define i32 @pair_sum(i32 %a, i32 %b) {
+        entry:
+          %p0 = insertvalue { i32, i32 } poison, i32 %a, 0
+          %p1 = insertvalue { i32, i32 } %p0, i32 %b, 1
+          %x = extractvalue { i32, i32 } %p1, 0
+          %y = extractvalue { i32, i32 } %p1, 1
+          %s = add i32 %x, %y
+          ret i32 %s
+        }
+        """
+        res_agg = verify_ir_equivalence(src_agg, tgt_agg)
+        assert res_agg.verdict == "PROVED"
+        assert res_agg.proved is True
+
+    def test_zero_legacy_vendor_markers_in_source(self):
+        repo_root = Path(__file__).parent.parent
+        for subdir in ("agents", "engine", "server", "frontend", "demo"):
+            for path in (repo_root / subdir).rglob("*.py"):
+                txt = path.read_text(encoding="utf-8")
+                assert "WATSONX_APIKEY" not in txt, f"Found WATSONX_APIKEY in {path}"
+                assert "Made with Bob" not in txt, f"Found Made with Bob in {path}"
+

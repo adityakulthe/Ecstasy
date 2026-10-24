@@ -187,4 +187,3 @@ print("=" * 70)
 print("Demo complete. Total time: <90 seconds")
 print("=" * 70)
 
-# Made with Bob

@@ -7,4 +7,3 @@ void process(char* buf, int n) {
         buf[i] = 0;
 }
 
-// Made with Bob

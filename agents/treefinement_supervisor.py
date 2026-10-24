@@ -547,4 +547,3 @@ int sum_array(int* arr, int n) {
 if __name__ == "__main__":
     main()
 
-# Made with Bob

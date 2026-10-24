@@ -11,4 +11,3 @@ void process(char* buf, int n) {
     }
 }
 
-// Made with Bob

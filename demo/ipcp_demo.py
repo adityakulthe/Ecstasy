@@ -121,4 +121,3 @@ print("   we only apply transformations that are provably correct.")
 print()
 print("="*80)
 
-# Made with Bob

@@ -6,4 +6,3 @@ int sum_array(int *arr, int n) {
     return sum;
 }
 
-// Made with Bob

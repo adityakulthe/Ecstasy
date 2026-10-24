@@ -667,4 +667,3 @@ def compile_optimized(c_source: str) -> str:
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
-# Made with Bob

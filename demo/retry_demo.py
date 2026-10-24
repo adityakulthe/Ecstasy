@@ -122,4 +122,3 @@ else:
     print("✅ PROVED on first attempt")
     print("=" * 60)
 
-# Made with Bob

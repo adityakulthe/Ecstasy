@@ -645,4 +645,3 @@ define i32 @add(i32 %a, i32 %b) {
 if __name__ == "__main__":
     main()
 
-# Made with Bob

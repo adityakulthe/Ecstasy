@@ -529,4 +529,3 @@ int sum_matrix(int arr[100][100]) {
 if __name__ == "__main__":
     main()
 
-# Made with Bob

@@ -115,7 +115,19 @@ class SymbolicIRVerifier:
                 skip_next = False
                 continue
             t = t.rstrip(",").strip()
-            if not t or t in ("nsw", "nuw", "exact", "inbounds", "nonnull", "noundef", "signext", "zeroext"):
+            if not t or t in (
+                "nsw",
+                "nuw",
+                "exact",
+                "disjoint",
+                "nneg",
+                "samesign",
+                "inbounds",
+                "nonnull",
+                "noundef",
+                "signext",
+                "zeroext",
+            ):
                 continue
             if t == "align":
                 skip_next = True
@@ -373,6 +385,27 @@ class SymbolicIRVerifier:
                 is_nsw = "nsw" in tokens
                 is_nuw = "nuw" in tokens
 
+                if op == "insertvalue":
+                    rest = re.sub(r"^insertvalue\s+(?:\{[^}]+\}|\[[^\]]+\])\s*", "", expr).strip()
+                    parts = [p.strip() for p in rest.split(",")]
+                    if len(parts) >= 3:
+                        agg_tok = parts[0].split()[-1] if parts[0].split() else ""
+                        val_ops = self._parse_operands(parts[1].split(), env)
+                        idx_tok = parts[2].strip()
+                        if val_ops and idx_tok.isdigit():
+                            idx = int(idx_tok)
+                            curr = (
+                                list(env[agg_tok])
+                                if (agg_tok in env and isinstance(env[agg_tok], tuple))
+                                else []
+                            )
+                            while len(curr) <= idx:
+                                curr.append(None)
+                            curr[idx] = val_ops[0]
+                            env[var] = tuple(curr)
+                            continue
+                    return params, None, overflow_checks
+
                 if op == "extractvalue":
                     agg_reg = None
                     for t in tokens[1:-1]:
@@ -382,9 +415,12 @@ class SymbolicIRVerifier:
                     idx_tok = tokens[-1].rstrip(",").strip()
                     if agg_reg and agg_reg in env and isinstance(env[agg_reg], tuple) and idx_tok.isdigit():
                         idx = int(idx_tok)
-                        if 0 <= idx < len(env[agg_reg]):
+                        if 0 <= idx < len(env[agg_reg]) and env[agg_reg][idx] is not None:
                             env[var] = env[agg_reg][idx]
-                            if idx == 1:
+                            if idx == 1 and (
+                                isinstance(env[var], z3.BoolRef)
+                                or (hasattr(env[var], "size") and env[var].size() == 1)
+                            ):
                                 last_cond = env[var]
                             continue
                     return params, None, overflow_checks
@@ -697,7 +733,14 @@ class SymbolicIRVerifier:
                         else:
                             env[var] = o1 ^ o2
                     elif op == "icmp":
-                        cond = tokens[1]
+                        cond = next(
+                            (
+                                t
+                                for t in tokens[1:]
+                                if t in ("eq", "ne", "slt", "sle", "sgt", "sge", "ult", "ule", "ugt", "uge")
+                            ),
+                            tokens[1],
+                        )
                         if cond == "eq": env[var] = (o1 == o2)
                         elif cond == "ne": env[var] = (o1 != o2)
                         elif cond == "slt": env[var] = (o1 < o2)
