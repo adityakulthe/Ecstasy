@@ -8,24 +8,12 @@ import os, sys, tempfile, subprocess, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from dotenv import load_dotenv
 from engine.symbolic_verifier import verify_ir_equivalence
+from agents.llm_client import get_model
 
 load_dotenv()
 
-model = None
 def get_demo_model():
-    global model
-    if model is None and os.getenv("WATSONX_URL") and os.getenv("WATSONX_APIKEY"):
-        try:
-            from ibm_watsonx_ai import Credentials
-            from ibm_watsonx_ai.foundation_models import ModelInference
-            model = ModelInference(
-                model_id="ibm/granite-4-h-small",
-                credentials=Credentials(url=os.getenv("WATSONX_URL"), api_key=os.getenv("WATSONX_APIKEY")),
-                project_id=os.getenv("WATSONX_PROJECT_ID")
-            )
-        except Exception:
-            model = None
-    return model
+    return get_model()
 
 def run_alive2(original_ir, optimized_ir):
     """Run Alive2 / Z3 SMT formal verification"""

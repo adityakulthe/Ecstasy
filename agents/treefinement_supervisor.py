@@ -76,8 +76,8 @@ class TreefinementSupervisor:
         """
         self.max_depth = max_depth
         self.branch_factor = branch_factor
-        self.api_key = os.getenv('WATSONX_APIKEY')
-        self.url = os.getenv('WATSONX_URL')
+        self.api_key = os.getenv('LLM_API_KEY') or os.getenv('OPENAI_API_KEY')
+        self.url = os.getenv('LLM_BASE_URL', 'https://api.openai.com/v1')
         self.total_hypotheses_generated = 0
         self.total_hypotheses_pruned = 0
         

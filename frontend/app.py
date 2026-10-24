@@ -894,16 +894,16 @@ def render_standard_view():
         st.header("ℹ️ About")
         st.markdown("""
         This system uses:
-        - **IBM Bob** for AI-driven optimization
-        - **LLVM/Clang** for IR generation
-        - **Alive2 + Z3** for formal verification
-        - **Granite 4.0** for orchestration
+        - **9-Agent Parallel Council** for AI-driven IR optimization
+        - **LLVM/Clang** for SSA IR generation & `-O2` passes
+        - **Alive2 + Z3 SMT** for mathematical translation validation
+        - **SafetyVault** for HMAC-SHA256 CBOM & SARIF v2.1.0 attestation
         
         **Status:**
         - ✅ MCP Server (Backend)
         - ✅ Streamlit UI (Frontend)
-        - 🔄 Bob Agents (In Progress)
-        - 🔄 Supervisor (In Progress)
+        - ✅ 9 Specialist Agents (Active)
+        - ✅ Z3 SMT Verifier (Online)
         """)
     
     # Main content - 3 columns
@@ -956,7 +956,7 @@ def render_standard_view():
                 # Step 2: Optimize with real AI
                 with st.spinner("Step 2: AI-driven optimization..."):
                     status_placeholder2 = st.empty()
-                    status_placeholder2.markdown('<div class="status-box status-info">🔄 Calling Granite 4.0 for optimization...</div>', unsafe_allow_html=True)
+                    status_placeholder2.markdown('<div class="status-box status-info">🔄 Running @ir-architect optimization pass...</div>', unsafe_allow_html=True)
                     
                     # Real AI optimization
                     optimize_result: Dict[str, Any] = optimize_ir_pass(compile_result["ir"], use_ai=True)
@@ -1098,9 +1098,9 @@ def render_standard_view():
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666;">
-        <p>Built with ❤️ using IBM Bob, watsonx.ai, LLVM, Alive2, and Z3 SMT</p>
+        <p>Built with ❤️ using Multi-Agent LLVM Synthesis, Alive2, and Z3 SMT</p>
         <p>🏆 Ecstasy - Making the world's software provably safe and fast at the compiler level</p>
-        <p><small>MCP Server: ✅ Ready | Bob Agents: ✅ Production Ready | Supervisor: ✅ Active | SMT Engine: ✅ Online</small></p>
+        <p><small>MCP Server: ✅ Ready | Specialist Agents: ✅ Production Ready | Supervisor: ✅ Active | SMT Engine: ✅ Online</small></p>
     </div>
     """, unsafe_allow_html=True)
 

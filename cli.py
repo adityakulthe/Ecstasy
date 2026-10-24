@@ -28,7 +28,7 @@ def print_banner():
  | |___| |____ ____) |  | |/ ____ \ ____) |  | |   
  |______\_____|_____/   |_/_/    \_\_____/   |_|   
     Formally-Verified AI Compiler & Security Pipeline
-    Powered by IBM Granite 4.0, Alive2, and Z3 SMT
+    Powered by Multi-Agent LLVM Synthesis, Alive2, and Z3 SMT
     """
     print(banner)
 
@@ -339,12 +339,13 @@ def cmd_doctor(args):
     else:
         print(f"🔐 Cryptographic Key:  ℹ️  Will be generated automatically on first cert export")
 
-    # 7. IBM watsonx AI
-    watson_key = os.getenv("WATSONX_APIKEY")
-    if watson_key:
-        print(f"🧠 watsonx AI API:     ✅ API Key configured ({watson_key[:4]}...{watson_key[-4:]})")
+    # 7. Universal LLM Endpoint (Optional)
+    llm_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    llm_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+    if llm_key:
+        print(f"🧠 LLM Endpoint:       ✅ API Key configured ({llm_url})")
     else:
-        print("🧠 watsonx AI API:     ℹ️  WATSONX_APIKEY not set (running in deterministic offline mode)")
+        print("🧠 LLM Endpoint:       ℹ️  LLM_API_KEY not set (running in deterministic LLVM + Z3 SMT mode)")
 
     print("=" * 65)
 

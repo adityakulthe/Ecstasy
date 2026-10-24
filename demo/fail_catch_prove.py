@@ -84,17 +84,10 @@ Original IR:
 Fix your optimization. Keep the nsw flag. Return only corrected IR."""
 
     corrected_ir = None
-    if os.getenv("WATSONX_APIKEY") and os.getenv("WATSONX_URL"):
+    from agents.llm_client import get_model
+    model = get_model()
+    if model is not None:
         try:
-            from ibm_watsonx_ai import Credentials
-            from ibm_watsonx_ai.foundation_models import ModelInference
-            from dotenv import load_dotenv
-            load_dotenv()
-            model = ModelInference(
-                model_id="ibm/granite-4-h-small",
-                credentials=Credentials(url=os.getenv("WATSONX_URL"), api_key=os.getenv("WATSONX_APIKEY")),
-                project_id=os.getenv("WATSONX_PROJECT_ID")
-            )
             response = model.chat(messages=[
                 {"role": "system", "content": "You are an expert LLVM IR optimizer. Return only corrected LLVM IR."},
                 {"role": "user", "content": retry_prompt}
@@ -103,7 +96,7 @@ Fix your optimization. Keep the nsw flag. Return only corrected IR."""
             import re
             corrected_ir = re.sub(r"```[a-z]*\n?", "", corrected_ir).strip().strip("`")
         except Exception as e:
-            print(f"   ⚠️  WatsonX call failed ({e}), using CEGAR synthesis fallback")
+            print(f"   ⚠️  LLM call failed ({e}), using CEGAR synthesis fallback")
             corrected_ir = None
             
     if not corrected_ir:

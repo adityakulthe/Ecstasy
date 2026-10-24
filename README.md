@@ -8,7 +8,7 @@
 
 [![AI Compiler Demo - Click to Watch on YouTube](https://img.youtube.com/vi/FictO9BoHnk/maxresdefault.jpg)](https://www.youtube.com/watch?v=FictO9BoHnk)
 
-[![Tests](https://img.shields.io/badge/tests-85/85_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-91/91_passing-success)](tests/)
 [![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
 [![Agents](https://img.shields.io/badge/agents-9_Parallel_Roundtable-blueviolet)](agents/)
 [![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
@@ -35,7 +35,7 @@
                          └──────────────────────┬───────────────────────┘
                                                 ▼
                          ┌──────────────────────────────────────────────┐
-                         │  1. CompilerSupervisor (Granite 4.0 / Local) │
+                         │  1. CompilerSupervisor (Universal LLM/Local) │
                          │  • 2. @ir-architect (LLVM -O2 / AI Rewrite)  │
                          │  • 3. @memory-sentinel (CWE Bounds Hardening)│
                          └──────────────────────┬───────────────────────┘
@@ -125,7 +125,7 @@ ecstasy ui --port 8501
 
 - **Pure-Python Z3 SMT Symbolic Verifier ([`engine/symbolic_verifier.py`](engine/symbolic_verifier.py))**:
   - Bit-exact verification across `i1`, `i8`, `i16`, `i32`, `i64`, and `ptr` bitvectors with SHA-256 content-addressed memoization (`_VERIFICATION_CACHE`).
-  - Proves `mem2reg` stack-to-register promotion, diamond `if/else` conditional stores, multi-way `switch` + `phi` CFGs, local `alloca` `getelementptr` **SROA (Scalar Replacement of Aggregates)**, and LLVM intrinsics (`@llvm.smax`, `@llvm.smin`, `@llvm.umax`, `@llvm.umin`, `@llvm.abs`, `@llvm.bswap`, `@llvm.ctpop`, `@llvm.ctlz`, `@llvm.cttz`, `@llvm.fshl`, `@llvm.fshr`, `freeze`).
+  - Proves `mem2reg` stack-to-register promotion, diamond `if/else` conditional stores, multi-way `switch` + `phi` CFGs, local `alloca` `getelementptr` **SROA (Scalar Replacement of Aggregates)**, overflow-checked intrinsics (`@llvm.{sadd,uadd,ssub,usub,smul,umul}.with.overflow.*` + `extractvalue`), and bitwise intrinsics (`@llvm.smax`, `@llvm.smin`, `@llvm.umax`, `@llvm.umin`, `@llvm.abs`, `@llvm.bswap`, `@llvm.ctpop`, `@llvm.ctlz`, `@llvm.cttz`, `@llvm.fshl`, `@llvm.fshr`, `freeze`).
   - Catches signed overflow poison (`nsw` stripping), arithmetic mutations, and dropped bounds guards with Alive2-formatted counterexamples.
 - **CWE-Mapped Static Vulnerability Scanner ([`server/mcp_server.py`](server/mcp_server.py))**:
   - Automatically detects **CWE-120** (`scanf`, `strcpy`/`__strcpy_chk`, `strcat`/`__strcat_chk`, `gets`, `sprintf`), **CWE-125/787** (unchecked `getelementptr`), **CWE-134** (uncontrolled format string in `@printf`), **CWE-190** (integer overflow feeding `@malloc`), **CWE-415** (double-free), **CWE-416** (use-after-free), and **CWE-674** (deep stack recursion), exporting to JSON and **SARIF 2.1.0**.
@@ -150,10 +150,10 @@ Ecstasy ships with modular agent rules and on-demand skills for zero-defect auto
 ```bash
 pytest -v
 ```
-All **85/85** unit, symbolic verification, multi-agent deliberation, CWE security, SARIF export, and whole-corpus benchmark tests run in ~3 seconds with zero external cloud dependencies required.
+All **91/91** unit, symbolic verification, multi-agent deliberation, CWE security, SARIF export, and whole-corpus benchmark tests run in ~3 seconds with zero external cloud dependencies required.
 
 ---
 
 ## 📄 License
 
-MIT License — Built with **IBM Bob + watsonx.ai Granite 4.0 + LLVM + Alive2 + Z3 SMT**.
+Apache-2.0 License — Built with **Multi-Agent LLVM Synthesis + Alive2 + Z3 SMT**.

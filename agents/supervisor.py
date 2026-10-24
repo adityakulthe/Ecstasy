@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 AI Compiler - Supervisor Agent
-Orchestrates the compilation pipeline using IBM Granite 4.0
-WITH SHARED KNOWLEDGE BASE FOR AGENT COORDINATION
+Orchestrates the 9-agent compilation pipeline with Shared Knowledge Base
 """
 
 import os
@@ -24,14 +23,14 @@ from agents.shared_knowledge_base import (
     SharedKnowledgeBase, AgentInsight, ConflictType, ResolutionStrategy
 )
 
-# Import real Granite agents
+# Import core IR agents
 try:
     from agents.ir_architect import run as ir_architect_run
     from agents.memory_sentinel import run as memory_sentinel_run
     USE_REAL_AGENTS = True
 except Exception as e:
     USE_REAL_AGENTS = False
-    print(f"⚠️  Real Granite agents not available, using fallback mode: {e}")
+    print(f"⚠️  Core IR agents not available, using fallback mode: {e}")
 
 # Import additional agents
 try:
@@ -52,19 +51,18 @@ except ImportError as e:
     TreefinementSupervisor = None
     CEGARSupervisor = None
 
-# Try to import direct Granite API, fall back to mocks if not available
+# Try to import direct LLM API, fall back to deterministic mode if not available
 try:
-    from agents.granite_direct import GraniteDirectAgent
+    from agents.granite_direct import DirectLLMAgent as GraniteDirectAgent
     USE_REAL_AI = True
 except ImportError:
     USE_REAL_AI = False
-    print("⚠️  Granite Direct API not available, using mocked responses")
 
 
 def is_valid_ir(ir_text: str) -> bool:
     """
     Validate that IR is complete and well-formed
-    Catches Granite truncation by checking brace balance
+    Catches truncation by checking brace balance
     """
     if not ir_text or not ir_text.strip():
         return False
@@ -81,8 +79,7 @@ def is_valid_ir(ir_text: str) -> bool:
 
 class CompilerSupervisor:
     """
-    Supervisor agent that orchestrates the AI compiler pipeline
-    Uses IBM Granite 4.0 for decision making and retry logic
+    Supervisor agent that orchestrates the 9-agent AI compiler pipeline
     """
     
     def __init__(
@@ -99,9 +96,9 @@ class CompilerSupervisor:
             use_knowledge_base: Enable shared knowledge base for coordination
             use_advanced_agents: Whether to run full 9-agent pipeline or standard pipeline
         """
-        self.api_key = os.getenv('WATSONX_APIKEY')
-        self.url = os.getenv('WATSONX_URL')
-        self.project_id = os.getenv('WATSONX_PROJECT_ID')
+        self.api_key = os.getenv('LLM_API_KEY') or os.getenv('OPENAI_API_KEY')
+        self.url = os.getenv('LLM_BASE_URL', 'https://api.openai.com/v1')
+        self.project_id = os.getenv('LLM_MODEL', 'gpt-4o-mini')
         self.max_retries = max_retries
         self.use_knowledge_base = use_knowledge_base
         
@@ -117,7 +114,7 @@ class CompilerSupervisor:
         else:
             self.knowledge_base = None
         
-        self.is_offline = not bool(self.api_key and self.url)
+        self.is_offline = not bool(self.api_key)
         if self.is_offline:
             print("ℹ️  Compiler Supervisor running in offline/deterministic mode")
     

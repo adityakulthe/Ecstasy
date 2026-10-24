@@ -2,42 +2,7 @@ import os
 import re
 from typing import Optional, Any
 from dotenv import load_dotenv
-
-load_dotenv()
-
-_cached_model = None
-
-def get_model() -> Optional[Any]:
-    """Lazily initialize IBM watsonx.ai model inference client if credentials exist."""
-    global _cached_model
-    if _cached_model is not None:
-        return _cached_model
-    url = os.getenv("WATSONX_URL")
-    api_key = os.getenv("WATSONX_APIKEY")
-    project_id = os.getenv("WATSONX_PROJECT_ID")
-    if not url or not api_key:
-        return None
-    try:
-        from ibm_watsonx_ai import Credentials
-        from ibm_watsonx_ai.foundation_models import ModelInference
-        _cached_model = ModelInference(
-            model_id=os.getenv("WATSONX_MODEL_ID", "meta-llama/llama-3-3-70b-instruct"),
-            credentials=Credentials(url=url, api_key=api_key),
-            project_id=project_id
-        )
-        return _cached_model
-    except Exception as e:
-        print(f"  ⚠️  watsonx client initialization skipped: {e}")
-        return None
-
-class _LazyModelProxy:
-    """Proxy object that delegates to the lazy model instance."""
-    def chat(self, *args, **kwargs):
-        m = get_model()
-        if m is None:
-            raise RuntimeError("WATSONX credentials not configured or client initialization failed")
-        return m.chat(*args, **kwargs)
-
+from agents.llm_client import get_model, LazyModelProxy
 from agents.agent_rules import (
     MEMORY_SENTINEL_SYSTEM_RULES,
     compact_ir_for_llm,
@@ -45,8 +10,9 @@ from agents.agent_rules import (
     validate_llm_ir_output,
 )
 
-_get_watsonx_model = get_model
-model = _LazyModelProxy()
+load_dotenv()
+
+model = LazyModelProxy()
 
 SYSTEM_PROMPT = MEMORY_SENTINEL_SYSTEM_RULES
 
@@ -109,4 +75,3 @@ entry:
     print("\n=== HARDENED OUTPUT IR ===")
     print(run(test_ir))
 
-# Made with Bob

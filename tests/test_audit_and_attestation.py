@@ -811,3 +811,25 @@ entry:
         assert summary[1]["iteration"] == 2
         assert summary[1]["verdict"] == "PROVED"
 
+    def test_provider_agnostic_llm_client_and_zero_ibm_dependencies(self):
+        from agents.llm_client import UniversalLLMClient
+
+        repo_root = Path(__file__).parent.parent
+        req_txt = (repo_root / "requirements.txt").read_text(encoding="utf-8")
+        pyproject_txt = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+        env_example_txt = (repo_root / ".env.example").read_text(encoding="utf-8")
+
+        assert "ibm-watsonx-ai" not in req_txt
+        assert "ibm-watsonx-ai" not in pyproject_txt
+        assert "WATSONX" not in env_example_txt
+        assert "LLM_API_KEY" in env_example_txt
+
+        client = UniversalLLMClient(
+            api_key="test-key",
+            base_url="https://api.openai.com/v1",
+            model_id="gpt-4o-mini",
+        )
+        assert client.api_key == "test-key"
+        assert client.base_url == "https://api.openai.com/v1"
+        assert client.model_id == "gpt-4o-mini"
+

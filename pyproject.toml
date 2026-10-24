@@ -5,15 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ecstasy"
 version = "1.0.0"
-description = "AI-Driven Formally-Verified LLVM Compiler Pipeline with IBM Granite 4.0 and Alive2"
+description = "Agentic Formally-Verified LLVM Compiler Pipeline with Z3 SMT and Alive2"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [
-    {name = "Aditya Kulthe", email = "66123137+adityakulthe@users.noreply.github.com"}
+    {name = "Aditya Kulthe", email = "adityakulthe12@gmail.com"}
 ]
 dependencies = [
-    "ibm-watsonx-ai>=1.2.0",
     "python-dotenv>=1.0.0",
     "requests>=2.31.0",
     "streamlit>=1.30.0",

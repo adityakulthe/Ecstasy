@@ -87,7 +87,7 @@ class CEGARSupervisor:
         self.max_iterations = max_iterations
         self.max_overhead_percent = max_overhead_percent
         self.reasoning_logs: List[ReasoningLog] = []
-        self.api_key = os.getenv('WATSONX_APIKEY')
+        self.api_key = os.getenv('LLM_API_KEY') or os.getenv('OPENAI_API_KEY')
         
     def parse_counterexample(self, alive2_output: str) -> Optional[CounterexampleAnalysis]:
         """
