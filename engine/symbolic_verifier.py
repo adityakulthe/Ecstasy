@@ -239,8 +239,12 @@ class SymbolicIRVerifier:
                 visited_labels.add(current_label)
                 continue
 
-            # Reject functions with external calls, pointer indexing, or floating-point ops
-            if any(op_tok in line for op_tok in ("call ", "getelementptr ", "fadd ", "fsub ", "fmul ", "fdiv ")):
+            # Reject functions with non-intrinsic external calls, pointer indexing, or floating-point ops
+            if any(op_tok in line for op_tok in ("getelementptr ", "fadd ", "fsub ", "fmul ", "fdiv ")):
+                return params, None, overflow_checks
+            if "call " in line and not any(
+                intr in line for intr in ("@llvm.smax.", "@llvm.smin.", "@llvm.umax.", "@llvm.umin.", "@llvm.abs.")
+            ):
                 return params, None, overflow_checks
 
             # Store instruction
@@ -291,12 +295,39 @@ class SymbolicIRVerifier:
             # Assignment: %res = op ...
             if "=" in line:
                 var, expr = [x.strip() for x in line.split("=", 1)]
+                # Strip tail/musttail/notail call prefixes
+                expr = re.sub(r"^(?:tail|musttail|notail)\s+", "", expr)
                 tokens = expr.split()
                 if not tokens:
                     continue
                 op = tokens[0]
                 is_nsw = "nsw" in tokens
                 is_nuw = "nuw" in tokens
+
+                if op == "call":
+                    # Handle pure bitvector LLVM intrinsics: @llvm.smax.*, @llvm.smin.*, @llvm.umax.*, @llvm.umin.*, @llvm.abs.*
+                    m_intr = re.search(r"@(llvm\.(?:smax|smin|umax|umin|abs))\.[a-z0-9.]+\((.*?)\)", expr)
+                    if m_intr:
+                        intr_name = m_intr.group(1)
+                        arg_tokens = m_intr.group(2).replace(",", " ").split()
+                        intr_ops = self._parse_operands(arg_tokens, env)
+                        if intr_name == "llvm.abs" and len(intr_ops) >= 1:
+                            o1 = intr_ops[0]
+                            zero = z3.BitVecVal(0, o1.size())
+                            env[var] = z3.If(o1 < zero, -o1, o1)
+                            continue
+                        elif len(intr_ops) >= 2:
+                            o1, o2 = intr_ops[0], intr_ops[1]
+                            if intr_name == "llvm.smax":
+                                env[var] = z3.If(o1 > o2, o1, o2)
+                            elif intr_name == "llvm.smin":
+                                env[var] = z3.If(o1 < o2, o1, o2)
+                            elif intr_name == "llvm.umax":
+                                env[var] = z3.If(z3.UGT(o1, o2), o1, o2)
+                            elif intr_name == "llvm.umin":
+                                env[var] = z3.If(z3.ULT(o1, o2), o1, o2)
+                            continue
+                    return params, None, overflow_checks
 
                 if op == "alloca":
                     memory_store[var] = None
@@ -432,7 +463,7 @@ class SymbolicIRVerifier:
                         target_width = self._parse_width(tokens[-1])
                         if hasattr(o, "size") and target_width < o.size():
                             env[var] = z3.Extract(target_width - 1, 0, o)
-                    elif op == "bitcast" or op == "load":
+                    elif op in ("bitcast", "load", "freeze"):
                         env[var] = o
 
         return params, ret_expr, overflow_checks
@@ -573,7 +604,22 @@ class SymbolicIRVerifier:
         )
 
 
+_VERIFICATION_CACHE: Dict[str, VerificationReport] = {}
+_MAX_CACHE_SIZE = 512
+
+
 def verify_ir_equivalence(orig_ir: str, opt_ir: str, timeout_sec: int = 30) -> VerificationReport:
-    """Convenience helper to verify two IR code strings."""
+    """Convenience helper to verify two IR code strings with SHA-256 content-addressed memoization."""
+    import hashlib
+    cache_key = hashlib.sha256(f"{timeout_sec}||{orig_ir}||{opt_ir}".encode("utf-8", errors="ignore")).hexdigest()
+    cached = _VERIFICATION_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     verifier = SymbolicIRVerifier(timeout_sec=timeout_sec)
-    return verifier.verify_equivalence(orig_ir, opt_ir)
+    report = verifier.verify_equivalence(orig_ir, opt_ir)
+    if len(_VERIFICATION_CACHE) >= _MAX_CACHE_SIZE:
+        _VERIFICATION_CACHE.pop(next(iter(_VERIFICATION_CACHE)))
+    _VERIFICATION_CACHE[cache_key] = report
+    return report
+

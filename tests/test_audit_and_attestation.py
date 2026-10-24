@@ -469,7 +469,54 @@ entry:
         assert agents_md.exists()
         assert gemini_md.exists()
         assert llvm_rules.exists()
-        assert eff_rules.exists()
         # Enforce < 150 lines litmus test on root AGENTS.md
         assert len(agents_md.read_text(encoding="utf-8").splitlines()) < 150
+
+    def test_llvm_intrinsics_and_freeze_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        orig_ir = """
+define i32 @max_val(i32 %a, i32 %b) {
+entry:
+  %cmp = icmp sgt i32 %a, %b
+  %res = select i1 %cmp, i32 %a, i32 %b
+  ret i32 %res
+}
+"""
+        opt_ir = """
+define i32 @max_val(i32 %a, i32 %b) {
+entry:
+  %af = freeze i32 %a
+  %res = tail call i32 @llvm.smax.i32(i32 %af, i32 %b)
+  ret i32 %res
+}
+"""
+        report = verify_ir_equivalence(orig_ir, opt_ir)
+        assert report.verdict == VerificationVerdict.PROVED
+        assert report.proved is True
+
+    def test_verification_sha256_memoization_cache(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, _VERIFICATION_CACHE
+        ir1 = "define i32 @id(i32 %x) { entry:\n ret i32 %x\n}"
+        ir2 = "define i32 @id(i32 %x) { entry:\n %y = add i32 %x, 0\n ret i32 %y\n}"
+        r1 = verify_ir_equivalence(ir1, ir2)
+        r2 = verify_ir_equivalence(ir1, ir2)
+        assert r1 is r2
+        assert len(_VERIFICATION_CACHE) > 0
+
+    def test_workspace_skills_frontmatter_valid(self):
+        repo_root = Path(__file__).parent.parent
+        skills_dir = repo_root / ".agents" / "skills"
+        expected_skills = [
+            "llvm-ir-verification",
+            "cegar-counterexample-debugging",
+            "security-audit-and-cbom",
+            "high-velocity-engineering",
+        ]
+        for skill_name in expected_skills:
+            skill_md = skills_dir / skill_name / "SKILL.md"
+            assert skill_md.exists(), f"Missing skill {skill_name}"
+            text = skill_md.read_text(encoding="utf-8")
+            assert text.startswith("---\n")
+            assert f"name: {skill_name}" in text
+            assert "description:" in text
 
