@@ -465,10 +465,13 @@ entry:
         gemini_md = repo_root / "GEMINI.md"
         llvm_rules = repo_root / ".agents" / "rules" / "llvm-verification-rules.md"
         eff_rules = repo_root / ".agents" / "rules" / "llm-agent-efficiency.md"
+        consensus_rules = repo_root / ".agents" / "rules" / "multi-agent-consensus.md"
 
         assert agents_md.exists()
         assert gemini_md.exists()
         assert llvm_rules.exists()
+        assert eff_rules.exists()
+        assert consensus_rules.exists()
         # Enforce < 150 lines litmus test on root AGENTS.md
         assert len(agents_md.read_text(encoding="utf-8").splitlines()) < 150
 
@@ -511,6 +514,7 @@ entry:
             "cegar-counterexample-debugging",
             "security-audit-and-cbom",
             "high-velocity-engineering",
+            "parallel-agent-council",
         ]
         for skill_name in expected_skills:
             skill_md = skills_dir / skill_name / "SKILL.md"
@@ -519,4 +523,36 @@ entry:
             assert text.startswith("---\n")
             assert f"name: {skill_name}" in text
             assert "description:" in text
+
+    def test_parallel_multi_agent_group_deliberation_and_consensus(self):
+        from agents.supervisor import CompilerSupervisor
+        supervisor = CompilerSupervisor(use_advanced_agents=True)
+        c_code = """
+        int compute_series(int n) {
+            int s = 0;
+            for (int i = 0; i < 8; i++) {
+                s += i;
+            }
+            return s + n;
+        }
+        """
+        res = supervisor.supervise_compilation(c_code)
+        try:
+            assert res["success"] is True
+            assert res["final_verdict"] == "PROVED"
+            assert "group_deliberation" in res
+            delib = res["group_deliberation"]
+            assert delib["quality_gate_passed"] is True
+            assert delib["messages_exchanged"] >= 5
+            assert len(delib["participating_agents"]) >= 4
+            assert delib["selected_strategy"] == "PARETO_OPTIMAL_VERIFIED_RELEASE"
+            assert "100% Z3 semantic equivalence" in delib["rationale"]
+        finally:
+            if res.get("binary_path") and os.path.exists(res["binary_path"]):
+                os.unlink(res["binary_path"])
+
+
+
+
+
 

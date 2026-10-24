@@ -40,9 +40,16 @@
 ### Rule 6 — Temp-File & Resource Hygiene
 - **Guaranteed Cleanup**: Every `tempfile.NamedTemporaryFile` or `tempfile.mkstemp` creating `.ll`, `.c`, or `.out` files MUST unlink temporary files inside a `finally:` block.
 
-### Rule 7 — Mandatory Verification Gate Before Completion
+### Rule 7 — Parallel Multi-Agent Group Deliberation & Trade-Off Consensus
+- **Parallel Fan-Out Execution**: Run specialist agents (`TreefinementSupervisor`, `CEGARSupervisor`, `AlgorithmicSynthesizer`, `GlobalContextAgent`, `MicroArchTuner`) concurrently via `ThreadPoolExecutor` rather than sequentially.
+- **Roundtable Trade-Off Discussion**: Every specialist agent must post its position to `SharedKnowledgeBase.post_discussion_message(sender, recipient, topic, position, tradeoff_axis, score_delta)`.
+- **Pareto Consensus**: Convene `SharedKnowledgeBase.conduct_group_deliberation(topic, perf_overhead_pct, safety_hardened, proved)` to resolve Speed vs. Safety vs. Verification trade-offs (enforcing safety overhead $\le 5.0\%$ via LICM loop-preheader hoisting while keeping 100% bounds/overflow protection).
+
+### Rule 8 — Mandatory Zero-Defect Quality Gate (0% Bad Quality Tolerance)
+- **Zero-Defect Invariant**: Reject any output with >0% quality degradation: `validate_llm_ir_output` must be `VALID`, Z3/Alive2 status must be `PROVED`, and `quality_gate_passed` must be `True`.
 - Before declaring any code change complete, run:
   ```bash
   /Users/adityakulthe/Ecstasy/.venv/bin/pytest -q
   ```
 - All tests in `tests/` MUST pass with 0 failures and 0 leaked temp files.
+
