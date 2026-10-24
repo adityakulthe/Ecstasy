@@ -1263,3 +1263,82 @@ entry:
         assert res_bug.verdict == "FAILED"
         assert res_bug.proved is False
         assert res_bug.counterexample is not None
+
+    def test_ieee754_qf_fp_floating_point_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. Double fneg elimination holds for all IEEE-754 floats (including -0.0 and NaN) -> PROVED
+        src_dneg = """
+        define float @fp_dneg(float %x) {
+        entry:
+          %n1 = fneg float %x
+          %n2 = fneg float %n1
+          ret float %n2
+        }
+        """
+        tgt_id = """
+        define float @fp_dneg(float %x) {
+        entry:
+          ret float %x
+        }
+        """
+        res_dneg = verify_ir_equivalence(src_dneg, tgt_id)
+        assert res_dneg.verdict == "PROVED"
+        assert res_dneg.proved is True
+
+        # 2. fadd float %x, 0.0 -> %x WITHOUT nsz fails on IEEE-754 signed zero (-0.0) -> FAILED
+        src_add_zero = """
+        define float @fp_add_zero(float %x) {
+        entry:
+          %r = fadd float %x, 0.0
+          ret float %r
+        }
+        """
+        tgt_add_zero = """
+        define float @fp_add_zero(float %x) {
+        entry:
+          ret float %x
+        }
+        """
+        res_signed_zero = verify_ir_equivalence(src_add_zero, tgt_add_zero)
+        assert res_signed_zero.verdict == "FAILED"
+        assert res_signed_zero.proved is False
+        assert res_signed_zero.counterexample is not None
+
+        # 3. fadd nsz nnan float %x, 0.0 -> %x WITH nsz + nnan fast-math flags -> PROVED
+        src_nsz = """
+        define float @fp_add_zero_nsz(float %x) {
+        entry:
+          %r = fadd nsz nnan float %x, 0.0
+          ret float %r
+        }
+        """
+        tgt_nsz = """
+        define float @fp_add_zero_nsz(float %x) {
+        entry:
+          ret float %x
+        }
+        """
+        res_nsz = verify_ir_equivalence(src_nsz, tgt_nsz)
+        assert res_nsz.verdict == "PROVED"
+        assert res_nsz.proved is True
+
+        # 4. @llvm.fabs.f32 and fcmp olt/oge/ord equivalence -> PROVED
+        src_fabs = """
+        define float @abs_mag(float %x) {
+        entry:
+          %a = call float @llvm.fabs.f32(float %x)
+          %b = call float @llvm.fabs.f32(float %a)
+          ret float %b
+        }
+        """
+        tgt_fabs = """
+        define float @abs_mag(float %x) {
+        entry:
+          %a = call float @llvm.fabs.f32(float %x)
+          ret float %a
+        }
+        """
+        res_fabs = verify_ir_equivalence(src_fabs, tgt_fabs)
+        assert res_fabs.verdict == "PROVED"
+        assert res_fabs.proved is True

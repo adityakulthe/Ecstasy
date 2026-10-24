@@ -1175,6 +1175,14 @@ def render_smt_and_certificate_inspector():
             "define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {\nentry:\n  %cmp = icmp sgt <4 x i32> %a, %b\n  %res = select <4 x i1> %cmp, <4 x i32> %a, <4 x i32> %b\n  ret <4 x i32> %res\n}",
             "define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {\nentry:\n  %res = call <4 x i32> @llvm.smax.v4i32(<4 x i32> %a, <4 x i32> %b)\n  ret <4 x i32> %res\n}"
         ),
+        "IEEE-754 QF_FP Double Negation Elimination (fneg(fneg(x)) == x)": (
+            "define float @fp_dneg(float %x) {\nentry:\n  %n1 = fneg float %x\n  %n2 = fneg float %n1\n  ret float %n2\n}",
+            "define float @fp_dneg(float %x) {\nentry:\n  ret float %x\n}"
+        ),
+        "IEEE-754 Signed-Zero Bug (fadd float %x, 0.0 vs %x without nsz)": (
+            "define float @fp_add_zero(float %x) {\nentry:\n  %r = fadd float %x, 0.0\n  ret float %r\n}",
+            "define float @fp_add_zero(float %x) {\nentry:\n  ret float %x\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"

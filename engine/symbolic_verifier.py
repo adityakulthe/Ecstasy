@@ -92,6 +92,33 @@ class SymbolicIRVerifier:
             return int(type_str[1:])
         return self.type_width_map.get(type_str, 32)
 
+    def _parse_fp_sort(self, type_str: str) -> Optional[Any]:
+        t = type_str.strip().rstrip(",")
+        if t in ("half", "f16"):
+            return z3.Float16()
+        if t in ("float", "f32"):
+            return z3.Float32()
+        if t in ("double", "f64"):
+            return z3.Float64()
+        return None
+
+    def _parse_fp_val(self, val_str: str, fp_sort: Any) -> Optional[Any]:
+        s = val_str.strip()
+        try:
+            if s.startswith("0x") or s.startswith("0X"):
+                import struct
+                bits = int(s, 16)
+                d_val = struct.unpack(">d", bits.to_bytes(8, "big"))[0]
+                if d_val == 0.0 and (bits >> 63) == 1:
+                    return z3.fpNeg(z3.FPVal(0.0, fp_sort))
+                return z3.FPVal(d_val, fp_sort)
+            fval = float(s)
+            if fval == 0.0 and s.startswith("-"):
+                return z3.fpNeg(z3.FPVal(0.0, fp_sort))
+            return z3.FPVal(fval, fp_sort)
+        except Exception:
+            return None
+
     def extract_functions(self, ir_text: str) -> Dict[str, Tuple[str, str, str]]:
         """
         Extract function signatures and bodies from LLVM IR.
@@ -109,6 +136,7 @@ class SymbolicIRVerifier:
     def _parse_operands(self, tokens: List[str], env: Dict[str, Any], default_width: int = 32) -> List[Any]:
         operands = []
         current_width = default_width
+        current_fp_sort: Optional[Any] = None
         last_vec_type: Optional[Tuple[int, int]] = None
         skip_next = False
         idx = 0
@@ -155,10 +183,21 @@ class SymbolicIRVerifier:
                 "noundef",
                 "signext",
                 "zeroext",
+                "fast",
+                "nnan",
+                "ninf",
+                "nsz",
+                "arcp",
+                "contract",
+                "afn",
+                "reassoc",
             ):
                 continue
             if t == "align":
                 skip_next = True
+                continue
+            if t in ("half", "float", "double"):
+                current_fp_sort = self._parse_fp_sort(t)
                 continue
             if t == "zeroinitializer" and last_vec_type is not None:
                 operands.append([z3.BitVecVal(0, last_vec_type[1]) for _ in range(last_vec_type[0])])
@@ -168,11 +207,20 @@ class SymbolicIRVerifier:
                 operands.append(val)
                 if hasattr(val, "size"):
                     current_width = val.size()
+                elif isinstance(val, z3.FPRef):
+                    current_fp_sort = val.sort()
             elif t.startswith("i") and t[1:].isdigit():
                 current_width = int(t[1:])
+                current_fp_sort = None
                 continue
             elif t == "ptr":
                 continue
+            elif current_fp_sort is not None and re.match(
+                r"^-?(?:\d+\.\d*(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+|0[xX][0-9a-fA-F]+)$", t
+            ):
+                fp_v = self._parse_fp_val(t, current_fp_sort)
+                if fp_v is not None:
+                    operands.append(fp_v)
             elif t.lstrip("-").isdigit():
                 operands.append(z3.BitVecVal(int(t), current_width))
             elif t == "true":
@@ -316,8 +364,12 @@ class SymbolicIRVerifier:
                 if len(parts) >= 2:
                     ty = parts[0]
                     name = parts[-1]
-                    width = self._parse_width(ty)
-                    params[name] = z3.BitVec(f"arg_{name.lstrip('%')}", width)
+                    fp_sort = self._parse_fp_sort(ty)
+                    if fp_sort is not None:
+                        params[name] = z3.FP(f"arg_{name.lstrip('%')}", fp_sort)
+                    else:
+                        width = self._parse_width(ty)
+                        params[name] = z3.BitVec(f"arg_{name.lstrip('%')}", width)
 
         env: Dict[str, Any] = dict(params)
         memory_store: Dict[str, Any] = {}
@@ -392,9 +444,7 @@ class SymbolicIRVerifier:
                 visited_labels.add(current_label)
                 continue
 
-            # Reject functions with floating-point ops or non-intrinsic external calls
-            if any(op_tok in line for op_tok in ("fadd ", "fsub ", "fmul ", "fdiv ")):
-                return params, None, overflow_checks
+            # Reject functions with non-intrinsic external calls
             if "call " in line and not (
                 any(
                     intr in line
@@ -422,6 +472,15 @@ class SymbolicIRVerifier:
                         "@llvm.usub.sat.",
                         "@llvm.bitreverse.",
                         "@llvm.vector.reduce.",
+                        "@llvm.fabs.",
+                        "@llvm.fma.",
+                        "@llvm.fmuladd.",
+                        "@llvm.sqrt.",
+                        "@llvm.minnum.",
+                        "@llvm.maxnum.",
+                        "@llvm.minimum.",
+                        "@llvm.maximum.",
+                        "@llvm.copysign.",
                     )
                 )
                 or (module_funcs and call_depth < 4 and any(f"@{fn}(" in line for fn in module_funcs))
@@ -526,15 +585,17 @@ class SymbolicIRVerifier:
             if line.startswith("ret "):
                 parts = line.split()
                 val_name = parts[-1]
-                if val_name.lstrip("-").isdigit():
+                if val_name in env:
+                    ret_expr = env[val_name]
+                elif len(parts) > 2 and self._parse_fp_sort(parts[1]) is not None:
+                    ret_expr = self._parse_fp_val(val_name, self._parse_fp_sort(parts[1]))
+                elif val_name.lstrip("-").isdigit():
                     ret_width = self._parse_width(parts[1]) if len(parts) > 2 else 32
                     ret_expr = z3.BitVecVal(int(val_name), ret_width)
                 elif val_name == "true":
                     ret_expr = z3.BitVecVal(1, 1)
                 elif val_name == "false":
                     ret_expr = z3.BitVecVal(0, 1)
-                elif val_name in env:
-                    ret_expr = env[val_name]
                 continue
 
             # Assignment: %res = op ...
@@ -665,6 +726,41 @@ class SymbolicIRVerifier:
                     return params, None, overflow_checks
 
                 if op == "call":
+                    # Handle IEEE-754 floating-point intrinsics @llvm.{fabs,fma,fmuladd,sqrt,minnum,maxnum,minimum,maximum,copysign}.*
+                    m_fp_intr = re.search(
+                        r"@(llvm\.(?:fabs|fma|fmuladd|sqrt|minnum|maxnum|minimum|maximum|copysign))\.[a-z0-9.]+\((.*?)\)",
+                        expr,
+                    )
+                    if m_fp_intr:
+                        fp_intr = m_fp_intr.group(1)
+                        arg_tokens = m_fp_intr.group(2).replace(",", " ").split()
+                        fp_ops = self._parse_operands(arg_tokens, env)
+                        if fp_intr == "llvm.fabs" and len(fp_ops) >= 1 and isinstance(fp_ops[0], z3.FPRef):
+                            env[var] = z3.fpAbs(fp_ops[0])
+                            continue
+                        elif fp_intr == "llvm.sqrt" and len(fp_ops) >= 1 and isinstance(fp_ops[0], z3.FPRef):
+                            env[var] = z3.fpSqrt(z3.RNE(), fp_ops[0])
+                            continue
+                        elif fp_intr in ("llvm.fma", "llvm.fmuladd") and len(fp_ops) >= 3:
+                            fa, fb, fc = fp_ops[0], fp_ops[1], fp_ops[2]
+                            if z3.is_fp_value(fa) and not z3.is_fp_value(fb):
+                                fa, fb = fb, fa
+                            env[var] = z3.fpFMA(z3.RNE(), fa, fb, fc)
+                            continue
+                        elif fp_intr in ("llvm.minnum", "llvm.minimum") and len(fp_ops) >= 2:
+                            env[var] = z3.fpMin(fp_ops[0], fp_ops[1])
+                            continue
+                        elif fp_intr in ("llvm.maxnum", "llvm.maximum") and len(fp_ops) >= 2:
+                            env[var] = z3.fpMax(fp_ops[0], fp_ops[1])
+                            continue
+                        elif fp_intr == "llvm.copysign" and len(fp_ops) >= 2:
+                            env[var] = z3.If(
+                                z3.fpIsNegative(fp_ops[1]),
+                                z3.fpNeg(z3.fpAbs(fp_ops[0])),
+                                z3.fpAbs(fp_ops[0]),
+                            )
+                            continue
+
                     # Handle horizontal SIMD vector reduction intrinsics @llvm.vector.reduce.*
                     m_vred = re.search(
                         r"@llvm\.vector\.reduce\.(add|mul|and|or|xor|smax|smin|umax|umin)\.[a-z0-9.]+\((.*?)\)",
@@ -1207,6 +1303,97 @@ class SymbolicIRVerifier:
                         elif o2.size() < o1.size():
                             o2 = z3.ZeroExt(o1.size() - o2.size(), o2)
 
+                    if isinstance(o1, z3.FPRef) and isinstance(o2, z3.FPRef):
+                        has_nnan = "nnan" in tokens or "fast" in tokens
+                        has_ninf = "ninf" in tokens or "fast" in tokens
+                        has_nsz = "nsz" in tokens or "fast" in tokens
+                        if has_nnan:
+                            overflow_checks.append(("fp_assume", z3.Not(z3.fpIsNaN(o1))))
+                            overflow_checks.append(("fp_assume", z3.Not(z3.fpIsNaN(o2))))
+                        if has_ninf:
+                            overflow_checks.append(("fp_assume", z3.Not(z3.fpIsInf(o1))))
+                            overflow_checks.append(("fp_assume", z3.Not(z3.fpIsInf(o2))))
+                        if has_nsz:
+                            overflow_checks.append(("fp_nsz", True))
+
+                        if op == "fadd":
+                            if z3.is_fp_value(o1) and not z3.is_fp_value(o2):
+                                o1, o2 = o2, o1
+                            env[var] = z3.fpAdd(z3.RNE(), o1, o2)
+                        elif op == "fsub":
+                            env[var] = z3.fpAdd(z3.RNE(), o1, z3.simplify(z3.fpNeg(o2)))
+                        elif op == "fmul":
+                            if z3.is_fp_value(o1) and not z3.is_fp_value(o2):
+                                o1, o2 = o2, o1
+                            env[var] = z3.fpMul(z3.RNE(), o1, o2)
+                        elif op == "fdiv":
+                            env[var] = z3.fpDiv(z3.RNE(), o1, o2)
+                        elif op == "frem":
+                            env[var] = z3.fpRem(o1, o2)
+                        elif op == "fcmp":
+                            fcond = next(
+                                (
+                                    t
+                                    for t in tokens[1:]
+                                    if t
+                                    in (
+                                        "false",
+                                        "oeq",
+                                        "ogt",
+                                        "oge",
+                                        "olt",
+                                        "ole",
+                                        "one",
+                                        "ord",
+                                        "ueq",
+                                        "ugt",
+                                        "uge",
+                                        "ult",
+                                        "ule",
+                                        "une",
+                                        "uno",
+                                        "true",
+                                    )
+                                ),
+                                tokens[1],
+                            )
+                            is_unord = z3.Or(z3.fpIsNaN(o1), z3.fpIsNaN(o2))
+                            is_ord = z3.Not(is_unord)
+                            if fcond == "false":
+                                env[var] = z3.BoolVal(False)
+                            elif fcond == "true":
+                                env[var] = z3.BoolVal(True)
+                            elif fcond == "oeq":
+                                env[var] = z3.fpEQ(o1, o2)
+                            elif fcond == "ogt":
+                                env[var] = z3.fpGT(o1, o2)
+                            elif fcond == "oge":
+                                env[var] = z3.fpGE(o1, o2)
+                            elif fcond == "olt":
+                                env[var] = z3.fpLT(o1, o2)
+                            elif fcond == "ole":
+                                env[var] = z3.fpLE(o1, o2)
+                            elif fcond == "one":
+                                env[var] = z3.And(is_ord, z3.Not(z3.fpEQ(o1, o2)))
+                            elif fcond == "ord":
+                                env[var] = is_ord
+                            elif fcond == "uno":
+                                env[var] = is_unord
+                            elif fcond == "ueq":
+                                env[var] = z3.Or(is_unord, z3.fpEQ(o1, o2))
+                            elif fcond == "ugt":
+                                env[var] = z3.Or(is_unord, z3.fpGT(o1, o2))
+                            elif fcond == "uge":
+                                env[var] = z3.Or(is_unord, z3.fpGE(o1, o2))
+                            elif fcond == "ult":
+                                env[var] = z3.Or(is_unord, z3.fpLT(o1, o2))
+                            elif fcond == "ule":
+                                env[var] = z3.Or(is_unord, z3.fpLE(o1, o2))
+                            elif fcond == "une":
+                                env[var] = z3.Not(z3.fpEQ(o1, o2))
+                            last_cond = env[var]
+                        continue
+
                     if op == "add":
                         env[var] = o1 + o2
                         if is_nsw:
@@ -1272,7 +1459,20 @@ class SymbolicIRVerifier:
                 elif len(operands) == 1:
                     o = operands[0]
                     target_width = self._parse_width(tokens[-1].rstrip(">"))
-                    if op == "zext":
+                    target_fp = self._parse_fp_sort(tokens[-1].rstrip(">"))
+                    if op == "fneg" and isinstance(o, z3.FPRef):
+                        env[var] = z3.fpNeg(o)
+                    elif op in ("fpext", "fptrunc") and isinstance(o, z3.FPRef) and target_fp is not None:
+                        env[var] = z3.fpFPToFP(z3.RNE(), o, target_fp)
+                    elif op == "sitofp" and hasattr(o, "size") and target_fp is not None:
+                        env[var] = z3.fpSignedToFP(z3.RNE(), o, target_fp)
+                    elif op == "uitofp" and hasattr(o, "size") and target_fp is not None:
+                        env[var] = z3.fpToFP(z3.RNE(), o, target_fp)
+                    elif op == "fptosi" and isinstance(o, z3.FPRef):
+                        env[var] = z3.fpToSBV(z3.RTZ(), o, z3.BitVecSort(target_width))
+                    elif op == "fptoui" and isinstance(o, z3.FPRef):
+                        env[var] = z3.fpToUBV(z3.RTZ(), o, z3.BitVecSort(target_width))
+                    elif op == "zext":
                         if isinstance(o, list):
                             res_lanes = []
                             for ln in o:
@@ -1314,7 +1514,14 @@ class SymbolicIRVerifier:
                             ]
                         elif hasattr(o, "size") and target_width < o.size():
                             env[var] = z3.Extract(target_width - 1, 0, o)
-                    elif op in ("bitcast", "load", "freeze"):
+                    elif op == "bitcast":
+                        if isinstance(o, z3.FPRef) and target_fp is None:
+                            env[var] = z3.fpToIEEEBV(o)
+                        elif isinstance(o, z3.BitVecRef) and target_fp is not None:
+                            env[var] = z3.fpBVToFP(o, target_fp)
+                        else:
+                            env[var] = o
+                    elif op in ("load", "freeze"):
                         env[var] = o
 
         return params, ret_expr, overflow_checks
@@ -1383,6 +1590,8 @@ class SymbolicIRVerifier:
                         for ln_o, ln_t in zip(v_orig, v_opt):
                             if hasattr(ln_o, "size") and hasattr(ln_t, "size") and ln_o.size() == ln_t.size():
                                 solver.add(ln_o == ln_t)
+                    elif isinstance(v_orig, z3.FPRef) and isinstance(v_opt, z3.FPRef) and v_orig.sort() == v_opt.sort():
+                        solver.add(v_orig == v_opt)
                     elif hasattr(v_orig, "size") and hasattr(v_opt, "size") and v_orig.size() == v_opt.size():
                         solver.add(v_orig == v_opt)
             else:
@@ -1395,10 +1604,27 @@ class SymbolicIRVerifier:
                         else:
                             solver.add(v_orig == v_opt)
 
+            has_fp_nsz = False
+            for ov_item in ov_orig + ov_opt:
+                if isinstance(ov_item, tuple) and len(ov_item) == 2:
+                    if ov_item[0] == "fp_assume":
+                        solver.add(ov_item[1])
+                    elif ov_item[0] == "fp_nsz" and ov_item[1]:
+                        has_fp_nsz = True
+
             # 1. Check return value equivalence
             solver.push()
             if isinstance(r_orig, list) and isinstance(r_opt, list) and len(r_orig) == len(r_opt):
                 solver.add(z3.Or(*[a != b for a, b in zip(r_orig, r_opt)]))
+            elif isinstance(r_orig, z3.FPRef) and isinstance(r_opt, z3.FPRef) and has_fp_nsz:
+                solver.add(
+                    z3.Not(
+                        z3.Or(
+                            z3.fpEQ(r_orig, r_opt),
+                            z3.And(z3.fpIsNaN(r_orig), z3.fpIsNaN(r_opt)),
+                        )
+                    )
+                )
             else:
                 solver.add(r_orig != r_opt)
 
@@ -1411,6 +1637,8 @@ class SymbolicIRVerifier:
                         input_vals[f"vec {pname}"] = [
                             m[ln].as_long() if m[ln] is not None else 0 for ln in bv
                         ]
+                    elif isinstance(bv, z3.FPRef):
+                        input_vals[f"fp {pname}"] = str(m.eval(bv))
                     else:
                         val = m[bv]
                         w_lbl = f"i{bv.size()}" if hasattr(bv, "size") else "i32"
