@@ -334,28 +334,68 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True, verbose: bool = True)
                     print(f"⚠️  Memory safety hardening failed: {e}")
                     print("   Using deterministic static memory analysis fallback")
 
-        # Deterministic static analysis fallback
+        # Deterministic static analysis fallback (CWE-mapped vulnerability scanner)
         if not safety_applied:
-            # Check for unbounded scanf
+            # 1. CWE-120: Unbounded scanf
             if "@scanf" in ir_code or "@__isoc99_scanf" in ir_code:
                 checks_added += 1
-                check_locations.append("Unbounded scanf invocation: bounds check required to prevent buffer overflow")
-            # Check for unsafe string functions
-            for unsafe_fn in ["@strcpy", "@strcat", "@gets", "@sprintf"]:
-                if unsafe_fn in ir_code:
+                check_locations.append("CWE-120: Unbounded scanf invocation: bounds check required to prevent buffer overflow")
+
+            # 2. CWE-120: Unsafe C string functions (including Darwin/glibc _chk intrinsics)
+            unsafe_fn_groups = [
+                ("@strcpy", ("@strcpy", "@__strcpy_chk")),
+                ("@strcat", ("@strcat", "@__strcat_chk")),
+                ("@gets", ("@gets", "@__gets_chk")),
+                ("@sprintf", ("@sprintf", "@__sprintf_chk")),
+            ]
+            for canonical_fn, variants in unsafe_fn_groups:
+                if any(v in ir_code for v in variants):
                     checks_added += 1
-                    check_locations.append(f"Unsafe C library call ({unsafe_fn}): destination buffer bounds guard required")
-            # Check for array pointer indexing (getelementptr)
+                    check_locations.append(f"CWE-120: Unsafe C library call ({canonical_fn}): destination buffer bounds guard required")
+
+            # 3. CWE-134: Uncontrolled format string (@printf called with register %fmt instead of @.str)
+            if re.search(r"call\s+[^@\n]*@printf\s*\(\s*(?:ptr|i8\*)\s+(?:noundef\s+)?%[0-9a-zA-Z_.]+\s*\)", ir_code):
+                checks_added += 1
+                check_locations.append("CWE-134: Uncontrolled format string register passed directly to @printf")
+
+            # 4. Function-level CWE checks (CWE-415 Double-Free, CWE-416 Use-After-Free, CWE-190 Integer Overflow Alloc, CWE-674 Stack Recursion)
+            fn_matches = re.findall(
+                r"define\s+(?:[\w]+\s+)*?[\w*]+\s+@([\w.]+)\s*\([^)]*\)[^{]*\{((?:[^{}]|\{[^{}]*\})*)\}",
+                ir_code,
+                re.DOTALL,
+            )
+            for fname, fbody in fn_matches:
+                free_calls = list(re.finditer(r"call\s+void\s+@free\s*\(", fbody))
+                if len(free_calls) >= 2:
+                    between_text = fbody[free_calls[0].end():free_calls[1].start()]
+                    if "@malloc" not in between_text and "@calloc" not in between_text:
+                        checks_added += 1
+                        check_locations.append(f"CWE-415: Double-free vulnerability detected in @{fname}")
+                if len(free_calls) >= 1:
+                    after_first_free = fbody[free_calls[0].end():]
+                    if "getelementptr " in after_first_free:
+                        checks_added += 1
+                        check_locations.append(f"CWE-416: Use-after-free pointer dereference after @free in @{fname}")
+                if re.search(r"call\s+[^@\n]*@malloc\s*\(\s*i64\s+(?:noundef\s+)?%", fbody) and (
+                    "add nsw" in fbody or "mul nsw" in fbody
+                ):
+                    checks_added += 1
+                    check_locations.append(f"CWE-190: Unchecked integer arithmetic feeding @malloc size in @{fname}")
+                if f"@{fname}(" in fbody and re.search(r"alloca\s+\[\s*(?:[2-9]\d{2,}|\d{4,})\s*x\s*i8\s*\]", fbody):
+                    checks_added += 1
+                    check_locations.append(f"CWE-674: Recursive stack frame allocation in @{fname} risks stack overflow")
+
+            # 5. CWE-125 / CWE-787: Array pointer indexing (getelementptr)
             gep_count = ir_code.count("getelementptr ")
             if gep_count > 0:
                 checks_added += 1
-                check_locations.append(f"{gep_count} getelementptr memory accesses analyzed for bounds protection")
-            
+                check_locations.append(f"CWE-125/787: {gep_count} getelementptr memory accesses analyzed for bounds protection")
+
             if checks_added > 0:
                 safety_applied = True
                 if verbose:
                     print(f"✅ Deterministic memory safety audit: {checks_added} check(s) identified")
-        
+
         return {
             'hardened_ir': hardened_ir,
             'checks_added': checks_added,

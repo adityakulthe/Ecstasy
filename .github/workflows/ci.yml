@@ -42,8 +42,11 @@ jobs:
         run: |
           pytest -v
 
-      - name: Verify Ecstasy CLI
+      - name: Verify Ecstasy CLI & Whole-Corpus Benchmark
         run: |
           ecstasy --help
+          ecstasy doctor
           ecstasy verify tests/fixtures/ipcp_combined.ll tests/fixtures/ipcp_combined.ll
+          ecstasy benchmark demo_corpus
           ecstasy demo midpoint
+

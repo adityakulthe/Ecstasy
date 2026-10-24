@@ -551,8 +551,102 @@ entry:
             if res.get("binary_path") and os.path.exists(res["binary_path"]):
                 os.unlink(res["binary_path"])
 
+    def test_sroa_local_alloca_getelementptr_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        orig_ir = """
+define i32 @pair_sum(i32 %a, i32 %b) {
+entry:
+  %pair = alloca [2 x i32], align 4
+  %p0 = getelementptr inbounds [2 x i32], ptr %pair, i64 0, i64 0
+  store i32 %a, ptr %p0, align 4
+  %p1 = getelementptr inbounds [2 x i32], ptr %pair, i64 0, i64 1
+  store i32 %b, ptr %p1, align 4
+  %v0 = load i32, ptr %p0, align 4
+  %v1 = load i32, ptr %p1, align 4
+  %sum = add i32 %v0, %v1
+  ret i32 %sum
+}
+"""
+        opt_ir = """
+define i32 @pair_sum(i32 %a, i32 %b) {
+entry:
+  %sum = add i32 %a, %b
+  ret i32 %sum
+}
+"""
+        bad_ir = """
+define i32 @pair_sum(i32 %a, i32 %b) {
+entry:
+  %sum = sub i32 %a, %b
+  ret i32 %sum
+}
+"""
+        r_ok = verify_ir_equivalence(orig_ir, opt_ir)
+        assert r_ok.verdict == VerificationVerdict.PROVED
+        assert r_ok.proved is True
 
+        r_bad = verify_ir_equivalence(orig_ir, bad_ir)
+        assert r_bad.verdict == VerificationVerdict.FAILED
+        assert r_bad.proved is False
 
+    def test_bitwise_intrinsics_bswap_ctpop_fshl_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        orig_rotl = """
+define i32 @rotl8(i32 %x) {
+entry:
+  %shl = shl i32 %x, 8
+  %shr = lshr i32 %x, 24
+  %res = or i32 %shl, %shr
+  ret i32 %res
+}
+"""
+        opt_fshl = """
+define i32 @rotl8(i32 %x) {
+entry:
+  %res = tail call i32 @llvm.fshl.i32(i32 %x, i32 %x, i32 8)
+  ret i32 %res
+}
+"""
+        r_rot = verify_ir_equivalence(orig_rotl, opt_fshl)
+        assert r_rot.verdict == VerificationVerdict.PROVED
 
+        orig_bswap16 = """
+define i16 @swap16(i16 %x) {
+entry:
+  %hi = lshr i16 %x, 8
+  %lo = shl i16 %x, 8
+  %res = or i16 %hi, %lo
+  ret i16 %res
+}
+"""
+        opt_bswap16 = """
+define i16 @swap16(i16 %x) {
+entry:
+  %res = call i16 @llvm.bswap.i16(i16 %x)
+  ret i16 %res
+}
+"""
+        r_bswap = verify_ir_equivalence(orig_bswap16, opt_bswap16)
+        assert r_bswap.verdict == VerificationVerdict.PROVED
 
+    def test_cwe_vulnerability_scanner_detects_uaf_double_free_and_format_string(self):
+        from server.mcp_server import compile_to_ir, apply_memory_safety
+        repo_root = Path(__file__).parent.parent
+        c_src = (repo_root / "demo_corpus" / "unsafe" / "buffer_overflow.c").read_text(encoding="utf-8")
+        comp = compile_to_ir(c_src, "buffer_overflow.c")
+        assert comp["success"] is True
+        safety = apply_memory_safety(comp["ir"], use_ai=False, verbose=False)
+        assert safety["checks_added"] >= 8
+        findings_blob = "\n".join(safety["check_locations"])
+        for cwe_tag in ("CWE-120", "CWE-134", "CWE-190", "CWE-415", "CWE-416", "CWE-674", "CWE-125/787"):
+            assert cwe_tag in findings_blob, f"Expected {cwe_tag} in findings"
 
+    def test_whole_corpus_benchmark_all_9_files_proved(self):
+        from engine.corpus_benchmark import run_corpus_benchmark
+        repo_root = Path(__file__).parent.parent
+        res = run_corpus_benchmark(repo_root / "demo_corpus")
+        assert res["files_benchmarked"] == 9
+        assert res["proved_files"] == 9
+        assert res["all_proved"] is True
+        assert res["overall_reduction_pct"] > 25.0
+        assert res["total_cwe_guards"] >= 40

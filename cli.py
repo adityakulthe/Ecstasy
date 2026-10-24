@@ -296,10 +296,18 @@ def cmd_doctor(args):
 
     # 3. LLVM Opt
     opt_path = shutil.which("opt")
+    if not opt_path:
+        for cand in ("/opt/homebrew/opt/llvm/bin/opt", "/usr/local/opt/llvm/bin/opt"):
+            if os.path.exists(cand):
+                opt_path = cand
+                break
     if opt_path:
         print(f"⚡ LLVM Opt:           ✅ Found at {opt_path}")
+    elif clang_path:
+        print(f"⚡ LLVM Optimizer:     ✅ Built-in Clang LLVM IR -O2 pipeline ({clang_path} -O2 -x ir)")
     else:
         print("⚡ LLVM Opt:           ⚠️  Not in PATH (optional for raw SMT verification)")
+
 
     # 4. Z3 SMT Solver
     try:
@@ -382,6 +390,45 @@ def cmd_ui(args):
     ])
 
 
+def cmd_benchmark(args):
+    from engine.corpus_benchmark import run_corpus_benchmark
+
+    target = Path(args.path)
+    if not target.exists():
+        print(f"❌ Error: Benchmark path not found: {target}")
+        sys.exit(1)
+
+    res = run_corpus_benchmark(target)
+    print("\n" + "=" * 88)
+    print("⚡ ECSTASY WHOLE-CORPUS OPTIMIZATION, CWE SECURITY & Z3 FORMAL VERIFICATION BENCHMARK")
+    print(f"📁 Target Corpus: {res['scope']} ({res['files_benchmarked']} file(s))")
+    print("=" * 88)
+    print(f"{'FILE':<32} | {'-O0 IR':<7} | {'OPT IR':<7} | {'REDUCED':<8} | {'CWEs':<5} | {'VERDICT':<8} | {'TIME'}")
+    print("-" * 88)
+    for rec in res["records"]:
+        fname = rec["file"]
+        if len(fname) > 31:
+            fname = "..." + fname[-28:]
+        print(
+            f"{fname:<32} | {rec['orig_instructions']:<7} | {rec['opt_instructions']:<7} | "
+            f"{rec['reduction_pct']:>6.1f}% | {rec['cwe_guards']:<5} | {rec['verdict']:<8} | {rec['elapsed_ms']:.0f}ms"
+        )
+    print("-" * 88)
+    print(
+        f"TOTAL / AVG                      | {res['total_orig_instructions']:<7} | "
+        f"{res['total_opt_instructions']:<7} | {res['overall_reduction_pct']:>6.1f}% | "
+        f"{res['total_cwe_guards']:<5} | {res['proved_files']}/{res['files_benchmarked']} PROVED | "
+        f"{res['total_elapsed_ms']:.0f}ms"
+    )
+    print("=" * 88)
+
+    if args.report:
+        out_p = Path(args.report)
+        with open(out_p, "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=2)
+        print(f"📄 Benchmark report exported to: {out_p}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -422,6 +469,11 @@ def main():
     audit_p.add_argument("--report", help="Export audit findings to JSON report file")
     audit_p.add_argument("--offline", action="store_true", help="Run deterministic checks without cloud AI")
 
+    # benchmark
+    bench_p = subparsers.add_parser("benchmark", help="Benchmark IR optimization, CWE security audit, and Z3 verification across a corpus")
+    bench_p.add_argument("path", nargs="?", default="demo_corpus", help="File or directory corpus path (default: demo_corpus)")
+    bench_p.add_argument("--report", help="Optional path to export benchmark results as JSON")
+
     # doctor
     subparsers.add_parser("doctor", help="Run system and toolchain diagnostic checks")
 
@@ -450,6 +502,8 @@ def main():
         cmd_check_memory(args)
     elif args.command == "audit":
         cmd_audit(args)
+    elif args.command == "benchmark":
+        cmd_benchmark(args)
     elif args.command == "doctor":
         cmd_doctor(args)
     elif args.command == "demo":
@@ -460,3 +514,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

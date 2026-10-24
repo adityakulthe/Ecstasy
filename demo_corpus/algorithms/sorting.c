@@ -79,7 +79,7 @@ static void heapify(int *arr, int n, int i) {
         heapify(arr, n, largest);
     }
 }
-void heapsort(int *arr, int n) {
+void heap_sort(int *arr, int n) {
     for (int i = n/2-1; i >= 0; i--) heapify(arr, n, i);
     for (int i = n-1; i > 0; i--) {
         int t=arr[0]; arr[0]=arr[i]; arr[i]=t;
@@ -134,7 +134,7 @@ int main(void) {
 
     int *copy = malloc(n * sizeof(int));
 
-    memcpy(copy, arr, n*sizeof(int)); heapsort(copy, n);
+    memcpy(copy, arr, n*sizeof(int)); heap_sort(copy, n);
     printf("Heapsort done. arr[0]=%d arr[n-1]=%d\n", copy[0], copy[n-1]);
 
     memcpy(copy, arr, n*sizeof(int)); merge_sort(copy, 0, n-1);

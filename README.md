@@ -18,7 +18,7 @@
 
 ---
 
-[![Tests](https://img.shields.io/badge/tests-79/79_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-83/83_passing-success)](tests/)
 [![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
 [![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)

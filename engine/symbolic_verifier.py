@@ -167,6 +167,11 @@ class SymbolicIRVerifier:
         if not ptr_reg:
             return
 
+        # Resolve constant-offset getelementptr alias if present
+        slot_key = ptr_reg
+        if ptr_reg in env and isinstance(env[ptr_reg], str) and env[ptr_reg].startswith("__gep__"):
+            slot_key = env[ptr_reg]
+
         new_val = None
         if val_str.startswith("%") and val_str in env:
             new_val = env[val_str]
@@ -176,7 +181,7 @@ class SymbolicIRVerifier:
         if new_val is None:
             return
 
-        prev_val = memory_store.get(ptr_reg)
+        prev_val = memory_store.get(slot_key)
         if (
             prev_val is not None
             and last_cond is not None
@@ -187,13 +192,13 @@ class SymbolicIRVerifier:
             false_lbl = last_br_labels[1].lstrip("%")
             cond_bool = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
             if current_label == false_lbl:
-                memory_store[ptr_reg] = z3.If(cond_bool, prev_val, new_val)
+                memory_store[slot_key] = z3.If(cond_bool, prev_val, new_val)
                 return
             elif current_label == true_lbl:
-                memory_store[ptr_reg] = z3.If(cond_bool, new_val, prev_val)
+                memory_store[slot_key] = z3.If(cond_bool, new_val, prev_val)
                 return
 
-        memory_store[ptr_reg] = new_val
+        memory_store[slot_key] = new_val
 
     def evaluate_function(self, ret_ty: str, raw_params: str, body: str) -> Tuple[Dict[str, Any], Any, List[Any]]:
         """
@@ -218,6 +223,7 @@ class SymbolicIRVerifier:
 
         env: Dict[str, Any] = dict(params)
         memory_store: Dict[str, Any] = {}
+        local_allocas: set[str] = set()
         last_cond = None
         last_br_labels: Optional[Tuple[str, str]] = None
         current_label: Optional[str] = "entry"
@@ -239,11 +245,24 @@ class SymbolicIRVerifier:
                 visited_labels.add(current_label)
                 continue
 
-            # Reject functions with non-intrinsic external calls, pointer indexing, or floating-point ops
-            if any(op_tok in line for op_tok in ("getelementptr ", "fadd ", "fsub ", "fmul ", "fdiv ")):
+            # Reject functions with floating-point ops or non-intrinsic external calls
+            if any(op_tok in line for op_tok in ("fadd ", "fsub ", "fmul ", "fdiv ")):
                 return params, None, overflow_checks
             if "call " in line and not any(
-                intr in line for intr in ("@llvm.smax.", "@llvm.smin.", "@llvm.umax.", "@llvm.umin.", "@llvm.abs.")
+                intr in line
+                for intr in (
+                    "@llvm.smax.",
+                    "@llvm.smin.",
+                    "@llvm.umax.",
+                    "@llvm.umin.",
+                    "@llvm.abs.",
+                    "@llvm.bswap.",
+                    "@llvm.ctpop.",
+                    "@llvm.ctlz.",
+                    "@llvm.cttz.",
+                    "@llvm.fshl.",
+                    "@llvm.fshr.",
+                )
             ):
                 return params, None, overflow_checks
 
@@ -305,8 +324,11 @@ class SymbolicIRVerifier:
                 is_nuw = "nuw" in tokens
 
                 if op == "call":
-                    # Handle pure bitvector LLVM intrinsics: @llvm.smax.*, @llvm.smin.*, @llvm.umax.*, @llvm.umin.*, @llvm.abs.*
-                    m_intr = re.search(r"@(llvm\.(?:smax|smin|umax|umin|abs))\.[a-z0-9.]+\((.*?)\)", expr)
+                    # Handle pure bitvector LLVM intrinsics
+                    m_intr = re.search(
+                        r"@(llvm\.(?:smax|smin|umax|umin|abs|bswap|ctpop|ctlz|cttz|fshl|fshr))\.[a-z0-9.]+\((.*?)\)",
+                        expr,
+                    )
                     if m_intr:
                         intr_name = m_intr.group(1)
                         arg_tokens = m_intr.group(2).replace(",", " ").split()
@@ -315,6 +337,52 @@ class SymbolicIRVerifier:
                             o1 = intr_ops[0]
                             zero = z3.BitVecVal(0, o1.size())
                             env[var] = z3.If(o1 < zero, -o1, o1)
+                            continue
+                        elif intr_name == "llvm.bswap" and len(intr_ops) >= 1:
+                            o1 = intr_ops[0]
+                            w = o1.size()
+                            if w >= 16 and w % 8 == 0:
+                                num_bytes = w // 8
+                                byte_slices = [z3.Extract(b * 8 + 7, b * 8, o1) for b in range(num_bytes)]
+                                env[var] = z3.Concat(*byte_slices)
+                                continue
+                        elif intr_name == "llvm.ctpop" and len(intr_ops) >= 1:
+                            o1 = intr_ops[0]
+                            w = o1.size()
+                            bits = [z3.ZeroExt(w - 1, z3.Extract(i, i, o1)) for i in range(w)]
+                            acc = z3.BitVecVal(0, w)
+                            for b_expr in bits:
+                                acc = acc + b_expr
+                            env[var] = acc
+                            continue
+                        elif intr_name in ("llvm.ctlz", "llvm.cttz") and len(intr_ops) >= 1:
+                            o1 = intr_ops[0]
+                            w = o1.size()
+                            res_bv = z3.BitVecVal(w, w)
+                            if intr_name == "llvm.ctlz":
+                                for i in range(w):
+                                    res_bv = z3.If(z3.Extract(i, i, o1) == 1, z3.BitVecVal(w - 1 - i, w), res_bv)
+                            else:
+                                for i in range(w - 1, -1, -1):
+                                    res_bv = z3.If(z3.Extract(i, i, o1) == 1, z3.BitVecVal(i, w), res_bv)
+                            env[var] = res_bv
+                            continue
+                        elif intr_name in ("llvm.fshl", "llvm.fshr") and len(intr_ops) >= 3:
+                            o1, o2, sh = intr_ops[0], intr_ops[1], intr_ops[2]
+                            w = o1.size()
+                            sh_mod = z3.URem(sh, z3.BitVecVal(w, w))
+                            if intr_name == "llvm.fshl":
+                                env[var] = z3.If(
+                                    sh_mod == 0,
+                                    o1,
+                                    (o1 << sh_mod) | z3.LShR(o2, z3.BitVecVal(w, w) - sh_mod),
+                                )
+                            else:
+                                env[var] = z3.If(
+                                    sh_mod == 0,
+                                    o2,
+                                    z3.LShR(o2, sh_mod) | (o1 << (z3.BitVecVal(w, w) - sh_mod)),
+                                )
                             continue
                         elif len(intr_ops) >= 2:
                             o1, o2 = intr_ops[0], intr_ops[1]
@@ -330,8 +398,35 @@ class SymbolicIRVerifier:
                     return params, None, overflow_checks
 
                 if op == "alloca":
+                    local_allocas.add(var)
                     memory_store[var] = None
                     continue
+
+                if op == "getelementptr":
+                    # Support local alloca SROA (Scalar Replacement of Aggregates) with constant indices
+                    clean_toks = [t.rstrip(",").strip() for t in tokens[1:]]
+                    base_ptr = None
+                    idx_tokens: List[str] = []
+                    for t in clean_toks:
+                        if base_ptr is None:
+                            if t.startswith("%"):
+                                base_ptr = t
+                        else:
+                            if t.startswith("%"):
+                                # Dynamic register index into array -> unsupported for flat bitvector unrolling
+                                return params, None, overflow_checks
+                            elif t.lstrip("-").isdigit():
+                                idx_tokens.append(t)
+                    if base_ptr and (
+                        base_ptr in local_allocas
+                        or (base_ptr in env and isinstance(env[base_ptr], str) and env[base_ptr].startswith("__gep__"))
+                    ):
+                        root_key = env[base_ptr] if (base_ptr in env and isinstance(env[base_ptr], str)) else f"__gep__{base_ptr}"
+                        gep_key = f"{root_key}_{'_'.join(idx_tokens)}" if idx_tokens else root_key
+                        env[var] = gep_key
+                        local_allocas.add(var)
+                        continue
+                    return params, None, overflow_checks
 
                 if op == "load":
                     # E.g. %5 = load i32, ptr %3, align 4 or %5 = load i32, i32* %3
@@ -342,14 +437,17 @@ class SymbolicIRVerifier:
                             ptr_reg = t
                             break
                     target_width = self._parse_width(clean_tokens[1]) if len(clean_tokens) > 1 else 32
-                    if ptr_reg and ptr_reg in memory_store and memory_store[ptr_reg] is not None:
-                        env[var] = memory_store[ptr_reg]
-                    elif ptr_reg and ptr_reg in env:
+                    slot_key = ptr_reg
+                    if ptr_reg and ptr_reg in env and isinstance(env[ptr_reg], str) and env[ptr_reg].startswith("__gep__"):
+                        slot_key = env[ptr_reg]
+                    if slot_key and slot_key in memory_store and memory_store[slot_key] is not None:
+                        env[var] = memory_store[slot_key]
+                    elif ptr_reg and ptr_reg in env and not isinstance(env[ptr_reg], str):
                         env[var] = env[ptr_reg]
                     else:
                         env[var] = z3.BitVec(f"load_{var.lstrip('%')}", target_width)
-                        if ptr_reg:
-                            memory_store[ptr_reg] = env[var]
+                        if slot_key:
+                            memory_store[slot_key] = env[var]
                     continue
 
                 if op == "phi":
