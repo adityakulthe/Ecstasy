@@ -1043,4 +1043,116 @@ entry:
         assert res_vec.verdict == "PROVED"
         assert res_vec.proved is True
 
+    def test_bounded_loop_unrolling_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. SSA phi constant-trip loop (sum_{i=0..3} i * x = 6 * x) vs closed-form mul
+        src_phi_loop = """
+        define i32 @weighted_sum(i32 %x) {
+        entry:
+          br label %for.cond
+        for.cond:
+          %i = phi i32 [ 0, %entry ], [ %i.next, %for.body ]
+          %acc = phi i32 [ 0, %entry ], [ %acc.next, %for.body ]
+          %cmp = icmp slt i32 %i, 4
+          br i1 %cmp, label %for.body, label %for.end
+        for.body:
+          %term = mul i32 %x, %i
+          %acc.next = add i32 %acc, %term
+          %i.next = add i32 %i, 1
+          br label %for.cond
+        for.end:
+          ret i32 %acc
+        }
+        """
+        tgt_closed = """
+        define i32 @weighted_sum(i32 %x) {
+        entry:
+          %res = mul i32 %x, 6
+          ret i32 %res
+        }
+        """
+        res_phi = verify_ir_equivalence(src_phi_loop, tgt_closed)
+        assert res_phi.verdict == "PROVED"
+        assert res_phi.proved is True
+
+        # 2. -O0 alloca/store/load constant-trip loop (4 iterations of acc += x) vs shl %x, 2
+        src_o0_loop = """
+        define i32 @quad_o0(i32 %x) {
+        entry:
+          %i = alloca i32, align 4
+          %acc = alloca i32, align 4
+          store i32 0, ptr %i, align 4
+          store i32 0, ptr %acc, align 4
+          br label %for.cond
+        for.cond:
+          %0 = load i32, ptr %i, align 4
+          %cmp = icmp slt i32 %0, 4
+          br i1 %cmp, label %for.body, label %for.end
+        for.body:
+          %1 = load i32, ptr %acc, align 4
+          %add = add i32 %1, %x
+          store i32 %add, ptr %acc, align 4
+          %2 = load i32, ptr %i, align 4
+          %inc = add i32 %2, 1
+          store i32 %inc, ptr %i, align 4
+          br label %for.cond
+        for.end:
+          %3 = load i32, ptr %acc, align 4
+          ret i32 %3
+        }
+        """
+        tgt_shl = """
+        define i32 @quad_o0(i32 %x) {
+        entry:
+          %res = shl i32 %x, 2
+          ret i32 %res
+        }
+        """
+        res_o0 = verify_ir_equivalence(src_o0_loop, tgt_shl)
+        assert res_o0.verdict == "PROVED"
+        assert res_o0.proved is True
+
+    def test_interprocedural_call_inlining_and_ipcp_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        src_ipcp = """
+        define i32 @affine_scale(i32 %v, i32 %factor, i32 %bias) {
+        entry:
+          %prod = mul i32 %v, %factor
+          %sum = add i32 %prod, %bias
+          ret i32 %sum
+        }
+        define i32 @compute_entry(i32 %x) {
+        entry:
+          %r = call i32 @affine_scale(i32 %x, i32 5, i32 7)
+          ret i32 %r
+        }
+        """
+        tgt_inlined = """
+        define i32 @compute_entry(i32 %x) {
+        entry:
+          %prod = mul i32 %x, 5
+          %sum = add i32 %prod, 7
+          ret i32 %sum
+        }
+        """
+        res_ok = verify_ir_equivalence(src_ipcp, tgt_inlined)
+        assert res_ok.verdict == "PROVED"
+        assert res_ok.proved is True
+
+        tgt_buggy = """
+        define i32 @compute_entry(i32 %x) {
+        entry:
+          %prod = mul i32 %x, 5
+          %sum = add i32 %prod, 8
+          ret i32 %sum
+        }
+        """
+        res_bug = verify_ir_equivalence(src_ipcp, tgt_buggy)
+        assert res_bug.verdict == "FAILED"
+        assert res_bug.proved is False
+        assert res_bug.counterexample is not None
+
+
 

@@ -1159,6 +1159,14 @@ def render_smt_and_certificate_inspector():
             "define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {\nentry:\n  %s0 = add i32 %a, %b\n  %s1 = add i32 %s0, %c\n  %s2 = add i32 %s1, %d\n  ret i32 %s2\n}",
             "define i32 @sum4(i32 %a, i32 %b, i32 %c, i32 %d) {\nentry:\n  %v0 = insertelement <4 x i32> poison, i32 %a, i64 0\n  %v1 = insertelement <4 x i32> %v0, i32 %b, i64 1\n  %v2 = insertelement <4 x i32> %v1, i32 %c, i64 2\n  %v3 = insertelement <4 x i32> %v2, i32 %d, i64 3\n  %res = call i32 @llvm.vector.reduce.add.v4i32(<4 x i32> %v3)\n  ret i32 %res\n}"
         ),
+        "Bounded Loop Unrolling (for i=0..4 vs Closed-Form shl)": (
+            "define i32 @quad_loop(i32 %x) {\nentry:\n  br label %for.cond\nfor.cond:\n  %i = phi i32 [ 0, %entry ], [ %i.next, %for.body ]\n  %acc = phi i32 [ 0, %entry ], [ %acc.next, %for.body ]\n  %cmp = icmp slt i32 %i, 4\n  br i1 %cmp, label %for.body, label %for.end\nfor.body:\n  %acc.next = add i32 %acc, %x\n  %i.next = add i32 %i, 1\n  br label %for.cond\nfor.end:\n  ret i32 %acc\n}",
+            "define i32 @quad_loop(i32 %x) {\nentry:\n  %res = shl i32 %x, 2\n  ret i32 %res\n}"
+        ),
+        "Interprocedural Function Inlining (call @triple vs Inlined mul)": (
+            "define i32 @scale(i32 %v, i32 %k) {\nentry:\n  %p = mul i32 %v, %k\n  ret i32 %p\n}\ndefine i32 @caller(i32 %x) {\nentry:\n  %r = call i32 @scale(i32 %x, i32 3)\n  %out = add i32 %r, 1\n  ret i32 %out\n}",
+            "define i32 @caller(i32 %x) {\nentry:\n  %p = mul i32 %x, 3\n  %out = add i32 %p, 1\n  ret i32 %out\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"

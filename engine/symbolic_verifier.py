@@ -212,7 +212,14 @@ class SymbolicIRVerifier:
 
         memory_store[slot_key] = new_val
 
-    def evaluate_function(self, ret_ty: str, raw_params: str, body: str) -> Tuple[Dict[str, Any], Any, List[Any]]:
+    def evaluate_function(
+        self,
+        ret_ty: str,
+        raw_params: str,
+        body: str,
+        module_funcs: Optional[Dict[str, Tuple[str, str, str]]] = None,
+        call_depth: int = 0,
+    ) -> Tuple[Dict[str, Any], Any, List[Any]]:
         """
         Symbolically evaluate an LLVM IR function body into a Z3 return expression.
         Returns: (param_dict, return_expr, overflow_constraints)
@@ -262,8 +269,47 @@ class SymbolicIRVerifier:
             flags=re.DOTALL,
         )
 
-        for line in normalized_body.splitlines():
-            line = line.strip()
+        from collections import deque
+
+        block_map: Dict[str, List[str]] = {"entry": []}
+        block_order: List[str] = ["entry"]
+        cur_b = "entry"
+        seen_b = {"entry"}
+        has_loop = False
+        for raw_ln in normalized_body.splitlines():
+            s_ln = raw_ln.split(";", 1)[0].strip()
+            if not s_ln:
+                continue
+            if s_ln.endswith(":"):
+                cur_b = s_ln[:-1].strip().lstrip("%")
+                if cur_b not in block_map:
+                    block_map[cur_b] = []
+                    block_order.append(cur_b)
+                seen_b.add(cur_b)
+                continue
+            block_map[cur_b].append(s_ln)
+            if s_ln.startswith("br "):
+                for m_lbl in re.findall(r"label\s+%([\w.]+)", s_ln):
+                    if m_lbl in seen_b:
+                        has_loop = True
+
+        prev_label: Optional[str] = None
+        prev_env: Dict[str, Any] = dict(env)
+        cfg_steps = 0
+        max_cfg_steps = 128
+        if has_loop:
+            first_lbl = (
+                block_order[1]
+                if (block_order[0] == "entry" and not block_map["entry"] and len(block_order) > 1)
+                else block_order[0]
+            )
+            current_label = first_lbl
+            line_queue = deque(block_map[first_lbl])
+        else:
+            line_queue = deque(normalized_body.splitlines())
+
+        while line_queue:
+            line = line_queue.popleft().strip()
             if ";" in line:
                 line = line[:line.index(";")]
             line = line.strip()
@@ -279,39 +325,49 @@ class SymbolicIRVerifier:
             # Reject functions with floating-point ops or non-intrinsic external calls
             if any(op_tok in line for op_tok in ("fadd ", "fsub ", "fmul ", "fdiv ")):
                 return params, None, overflow_checks
-            if "call " in line and not any(
-                intr in line
-                for intr in (
-                    "@llvm.smax.",
-                    "@llvm.smin.",
-                    "@llvm.umax.",
-                    "@llvm.umin.",
-                    "@llvm.abs.",
-                    "@llvm.bswap.",
-                    "@llvm.ctpop.",
-                    "@llvm.ctlz.",
-                    "@llvm.cttz.",
-                    "@llvm.fshl.",
-                    "@llvm.fshr.",
-                    "@llvm.sadd.with.overflow.",
-                    "@llvm.uadd.with.overflow.",
-                    "@llvm.ssub.with.overflow.",
-                    "@llvm.usub.with.overflow.",
-                    "@llvm.smul.with.overflow.",
-                    "@llvm.umul.with.overflow.",
-                    "@llvm.sadd.sat.",
-                    "@llvm.uadd.sat.",
-                    "@llvm.ssub.sat.",
-                    "@llvm.usub.sat.",
-                    "@llvm.bitreverse.",
-                    "@llvm.vector.reduce.",
+            if "call " in line and not (
+                any(
+                    intr in line
+                    for intr in (
+                        "@llvm.smax.",
+                        "@llvm.smin.",
+                        "@llvm.umax.",
+                        "@llvm.umin.",
+                        "@llvm.abs.",
+                        "@llvm.bswap.",
+                        "@llvm.ctpop.",
+                        "@llvm.ctlz.",
+                        "@llvm.cttz.",
+                        "@llvm.fshl.",
+                        "@llvm.fshr.",
+                        "@llvm.sadd.with.overflow.",
+                        "@llvm.uadd.with.overflow.",
+                        "@llvm.ssub.with.overflow.",
+                        "@llvm.usub.with.overflow.",
+                        "@llvm.smul.with.overflow.",
+                        "@llvm.umul.with.overflow.",
+                        "@llvm.sadd.sat.",
+                        "@llvm.uadd.sat.",
+                        "@llvm.ssub.sat.",
+                        "@llvm.usub.sat.",
+                        "@llvm.bitreverse.",
+                        "@llvm.vector.reduce.",
+                    )
                 )
+                or (module_funcs and call_depth < 4 and any(f"@{fn}(" in line for fn in module_funcs))
             ):
                 return params, None, overflow_checks
 
             # Store instruction
             if line.startswith("store "):
-                self._handle_store(line, env, memory_store, current_label, last_cond, last_br_labels)
+                self._handle_store(
+                    line,
+                    env,
+                    memory_store,
+                    current_label,
+                    None if has_loop else last_cond,
+                    None if has_loop else last_br_labels,
+                )
                 continue
 
             # Switch instruction: switch i32 %val, label %default [ i32 0, label %bb0 i32 1, label %bb1 ]
@@ -347,6 +403,15 @@ class SymbolicIRVerifier:
             if line.startswith("br label "):
                 tokens = [t.rstrip(",").strip() for t in line.split()]
                 target_lbl = tokens[-1].lstrip("%")
+                if has_loop:
+                    cfg_steps += 1
+                    if cfg_steps > max_cfg_steps or target_lbl not in block_map:
+                        return params, None, overflow_checks
+                    prev_label = current_label
+                    prev_env = dict(env)
+                    current_label = target_lbl
+                    line_queue = deque(block_map[target_lbl])
+                    continue
                 if target_lbl in visited_labels:
                     return params, None, overflow_checks
                 continue
@@ -362,6 +427,25 @@ class SymbolicIRVerifier:
                         if tok == "label" and idx + 1 < len(tokens)
                     ]
                     if len(label_tokens) == 2:
+                        if has_loop:
+                            cfg_steps += 1
+                            if cfg_steps > max_cfg_steps:
+                                return params, None, overflow_checks
+                            cond_b = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
+                            s_cond = z3.simplify(cond_b)
+                            if z3.is_true(s_cond):
+                                next_lbl = label_tokens[0].lstrip("%")
+                            elif z3.is_false(s_cond):
+                                next_lbl = label_tokens[1].lstrip("%")
+                            else:
+                                return params, None, overflow_checks
+                            if next_lbl not in block_map:
+                                return params, None, overflow_checks
+                            prev_label = current_label
+                            prev_env = dict(env)
+                            current_label = next_lbl
+                            line_queue = deque(block_map[next_lbl])
+                            continue
                         for lbl in label_tokens:
                             if lbl.lstrip("%") in visited_labels:
                                 return params, None, overflow_checks
@@ -691,6 +775,39 @@ class SymbolicIRVerifier:
                             elif intr_name == "llvm.umin":
                                 env[var] = z3.If(z3.ULT(o1, o2), o1, o2)
                             continue
+                    if module_funcs and call_depth < 4:
+                        m_ucall = re.search(r"@([\w.]+)\s*\((.*?)\)", expr)
+                        if m_ucall and m_ucall.group(1) in module_funcs:
+                            callee_name = m_ucall.group(1)
+                            c_ret_ty, c_params_raw, c_body = module_funcs[callee_name]
+                            arg_tokens = m_ucall.group(2).replace(",", " ").split()
+                            call_args = self._parse_operands(arg_tokens, env)
+                            c_params, c_ret, _ = self.evaluate_function(
+                                c_ret_ty,
+                                c_params_raw,
+                                c_body,
+                                module_funcs=module_funcs,
+                                call_depth=call_depth + 1,
+                            )
+                            if c_ret is not None and len(call_args) == len(c_params):
+                                subst_pairs = []
+                                for f_bv, a_val in zip(c_params.values(), call_args):
+                                    if isinstance(f_bv, list) and isinstance(a_val, list) and len(f_bv) == len(a_val):
+                                        for f_ln, a_ln in zip(f_bv, a_val):
+                                            subst_pairs.append((f_ln, a_ln))
+                                    elif hasattr(f_bv, "size") and hasattr(a_val, "size"):
+                                        if a_val.size() < f_bv.size():
+                                            a_val = z3.ZeroExt(f_bv.size() - a_val.size(), a_val)
+                                        elif a_val.size() > f_bv.size():
+                                            a_val = z3.Extract(f_bv.size() - 1, 0, a_val)
+                                        subst_pairs.append((f_bv, a_val))
+                                if isinstance(c_ret, list):
+                                    env[var] = [
+                                        z3.substitute(ln, *subst_pairs) if subst_pairs else ln for ln in c_ret
+                                    ]
+                                else:
+                                    env[var] = z3.substitute(c_ret, *subst_pairs) if subst_pairs else c_ret
+                                continue
                     return params, None, overflow_checks
 
                 if op == "alloca":
@@ -750,6 +867,24 @@ class SymbolicIRVerifier:
                     # E.g. %res = phi i32 [ %neg, %then ], [ %a, %else ]
                     phi_pairs = re.findall(r"\[\s*([^,]+?)\s*,\s*([^\]]+?)\s*\]", expr)
                     w = self._parse_width(tokens[1]) if len(tokens) > 1 else 32
+                    if has_loop and prev_label is not None:
+                        matched_val = None
+                        for val_s, lbl_s in phi_pairs:
+                            if lbl_s.strip().lstrip("%") == prev_label:
+                                v_clean = val_s.strip()
+                                if v_clean in prev_env:
+                                    matched_val = prev_env[v_clean]
+                                elif v_clean.lstrip("-").isdigit():
+                                    matched_val = z3.BitVecVal(int(v_clean), w)
+                                elif v_clean == "true":
+                                    matched_val = z3.BitVecVal(1, 1)
+                                elif v_clean == "false":
+                                    matched_val = z3.BitVecVal(0, 1)
+                                break
+                        if matched_val is None:
+                            return params, None, overflow_checks
+                        env[var] = matched_val
+                        continue
                     if switch_cond_map and len(phi_pairs) >= 2:
                         def _resolve_phi_val(v_s: str) -> Any:
                             v_s = v_s.strip()
@@ -978,8 +1113,12 @@ class SymbolicIRVerifier:
             ret_ty_opt, params_opt, body_opt = opt_funcs[fname]
 
             try:
-                p_orig, r_orig, ov_orig = self.evaluate_function(ret_ty_orig, params_orig, body_orig)
-                p_opt, r_opt, ov_opt = self.evaluate_function(ret_ty_opt, params_opt, body_opt)
+                p_orig, r_orig, ov_orig = self.evaluate_function(
+                    ret_ty_orig, params_orig, body_orig, module_funcs=orig_funcs
+                )
+                p_opt, r_opt, ov_opt = self.evaluate_function(
+                    ret_ty_opt, params_opt, body_opt, module_funcs=opt_funcs
+                )
             except Exception as e:
                 # Fall back if instructions are not directly expressible
                 continue
