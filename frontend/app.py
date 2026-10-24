@@ -1171,6 +1171,10 @@ def render_smt_and_certificate_inspector():
             "define i32 @dyn_array_forward(i64 %idx, i32 %val) {\nentry:\n  %arr = alloca [16 x i32], align 16\n  %p_i = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %idx\n  store i32 %val, ptr %p_i, align 4\n  %next = add i64 %idx, 1\n  %p_next = getelementptr inbounds [16 x i32], ptr %arr, i64 0, i64 %next\n  store i32 99, ptr %p_next, align 4\n  %loaded = load i32, ptr %p_i, align 4\n  ret i32 %loaded\n}",
             "define i32 @dyn_array_forward(i64 %idx, i32 %val) {\nentry:\n  ret i32 %val\n}"
         ),
+        "SIMD <4 x i32> Predicated Max (icmp sgt + select vs @llvm.smax.v4i32)": (
+            "define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {\nentry:\n  %cmp = icmp sgt <4 x i32> %a, %b\n  %res = select <4 x i1> %cmp, <4 x i32> %a, <4 x i32> %b\n  ret <4 x i32> %res\n}",
+            "define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {\nentry:\n  %res = call <4 x i32> @llvm.smax.v4i32(<4 x i32> %a, <4 x i32> %b)\n  ret <4 x i32> %res\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"

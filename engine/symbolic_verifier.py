@@ -109,12 +109,40 @@ class SymbolicIRVerifier:
     def _parse_operands(self, tokens: List[str], env: Dict[str, Any], default_width: int = 32) -> List[Any]:
         operands = []
         current_width = default_width
+        last_vec_type: Optional[Tuple[int, int]] = None
         skip_next = False
-        for t in tokens:
+        idx = 0
+        while idx < len(tokens):
+            t_raw = tokens[idx]
+            idx += 1
             if skip_next:
                 skip_next = False
                 continue
-            t = t.rstrip(",").strip()
+            t = t_raw.rstrip(",").strip()
+            if t.startswith("<"):
+                chunk_parts = [t]
+                while not chunk_parts[-1].endswith(">") and idx < len(tokens):
+                    chunk_parts.append(tokens[idx].rstrip(",").strip())
+                    idx += 1
+                angle_chunk = " ".join(chunk_parts)
+                m_vtype = re.match(r"<\s*(\d+)\s*x\s*(i\d+)\s*>", angle_chunk)
+                if m_vtype:
+                    last_vec_type = (int(m_vtype.group(1)), self._parse_width(m_vtype.group(2)))
+                    current_width = last_vec_type[1]
+                    continue
+                elem_matches = re.findall(r"(i\d+)\s+(-?\d+|true|false)", angle_chunk)
+                if elem_matches:
+                    vec_lit = []
+                    for ety, eval_s in elem_matches:
+                        ew = self._parse_width(ety)
+                        if eval_s == "true":
+                            vec_lit.append(z3.BitVecVal(1, 1) if ew == 1 else z3.BoolVal(True))
+                        elif eval_s == "false":
+                            vec_lit.append(z3.BitVecVal(0, 1) if ew == 1 else z3.BoolVal(False))
+                        else:
+                            vec_lit.append(z3.BitVecVal(int(eval_s), ew))
+                    operands.append(vec_lit)
+                continue
             if not t or t in (
                 "nsw",
                 "nuw",
@@ -131,6 +159,9 @@ class SymbolicIRVerifier:
                 continue
             if t == "align":
                 skip_next = True
+                continue
+            if t == "zeroinitializer" and last_vec_type is not None:
+                operands.append([z3.BitVecVal(0, last_vec_type[1]) for _ in range(last_vec_type[0])])
                 continue
             if t.startswith("%") and t in env:
                 val = env[t]
@@ -714,11 +745,22 @@ class SymbolicIRVerifier:
                         intr_ops = self._parse_operands(arg_tokens, env)
                         if intr_name == "llvm.abs" and len(intr_ops) >= 1:
                             o1 = intr_ops[0]
-                            zero = z3.BitVecVal(0, o1.size())
-                            env[var] = z3.If(o1 < zero, -o1, o1)
+                            if isinstance(o1, list):
+                                env[var] = [
+                                    z3.If(ln < z3.BitVecVal(0, ln.size()), -ln, ln) for ln in o1
+                                ]
+                            else:
+                                zero = z3.BitVecVal(0, o1.size())
+                                env[var] = z3.If(o1 < zero, -o1, o1)
                             continue
                         elif intr_name == "llvm.bswap" and len(intr_ops) >= 1:
                             o1 = intr_ops[0]
+                            if isinstance(o1, list):
+                                env[var] = [
+                                    z3.Concat(*[z3.Extract(b * 8 + 7, b * 8, ln) for b in range(ln.size() // 8)])
+                                    for ln in o1
+                                ]
+                                continue
                             w = o1.size()
                             if w >= 16 and w % 8 == 0:
                                 num_bytes = w // 8
@@ -735,6 +777,16 @@ class SymbolicIRVerifier:
                             continue
                         elif intr_name == "llvm.ctpop" and len(intr_ops) >= 1:
                             o1 = intr_ops[0]
+                            if isinstance(o1, list):
+                                res_ctpop = []
+                                for ln in o1:
+                                    lw = ln.size()
+                                    acc_ln = z3.BitVecVal(0, lw)
+                                    for i in range(lw):
+                                        acc_ln = acc_ln + z3.ZeroExt(lw - 1, z3.Extract(i, i, ln))
+                                    res_ctpop.append(acc_ln)
+                                env[var] = res_ctpop
+                                continue
                             w = o1.size()
                             bits = [z3.ZeroExt(w - 1, z3.Extract(i, i, o1)) for i in range(w)]
                             acc = z3.BitVecVal(0, w)
@@ -805,6 +857,16 @@ class SymbolicIRVerifier:
                             continue
                         elif len(intr_ops) >= 2:
                             o1, o2 = intr_ops[0], intr_ops[1]
+                            if isinstance(o1, list) and isinstance(o2, list) and len(o1) == len(o2):
+                                if intr_name == "llvm.smax":
+                                    env[var] = [z3.If(a > b, a, b) for a, b in zip(o1, o2)]
+                                elif intr_name == "llvm.smin":
+                                    env[var] = [z3.If(a < b, a, b) for a, b in zip(o1, o2)]
+                                elif intr_name == "llvm.umax":
+                                    env[var] = [z3.If(z3.UGT(a, b), a, b) for a, b in zip(o1, o2)]
+                                elif intr_name == "llvm.umin":
+                                    env[var] = [z3.If(z3.ULT(a, b), a, b) for a, b in zip(o1, o2)]
+                                continue
                             if intr_name == "llvm.smax":
                                 env[var] = z3.If(o1 > o2, o1, o2)
                             elif intr_name == "llvm.smin":
@@ -1046,6 +1108,16 @@ class SymbolicIRVerifier:
 
                 if op == "select" and len(operands) >= 3:
                     cond, tv, fv = operands[0], operands[1], operands[2]
+                    if isinstance(cond, list) and isinstance(tv, list) and isinstance(fv, list) and len(cond) == len(tv) == len(fv):
+                        env[var] = [
+                            z3.If((c == 1) if isinstance(c, z3.BitVecRef) else c, t, f)
+                            for c, t, f in zip(cond, tv, fv)
+                        ]
+                        continue
+                    elif isinstance(tv, list) and isinstance(fv, list) and len(tv) == len(fv):
+                        cond_bool = (cond == 1) if isinstance(cond, z3.BitVecRef) else cond
+                        env[var] = [z3.If(cond_bool, t, f) for t, f in zip(tv, fv)]
+                        continue
                     if hasattr(tv, "size") and hasattr(fv, "size"):
                         if tv.size() < fv.size():
                             tv = z3.ZeroExt(fv.size() - tv.size(), tv)
@@ -1079,11 +1151,49 @@ class SymbolicIRVerifier:
                         elif op == "ashr":
                             env[var] = [a >> b for a, b in zip(o1, o2)]
                         elif op == "and":
-                            env[var] = [a & b for a, b in zip(o1, o2)]
+                            env[var] = [
+                                z3.And(a, b) if (isinstance(a, z3.BoolRef) and isinstance(b, z3.BoolRef)) else (a & b)
+                                for a, b in zip(o1, o2)
+                            ]
                         elif op == "or":
-                            env[var] = [a | b for a, b in zip(o1, o2)]
+                            env[var] = [
+                                z3.Or(a, b) if (isinstance(a, z3.BoolRef) and isinstance(b, z3.BoolRef)) else (a | b)
+                                for a, b in zip(o1, o2)
+                            ]
                         elif op == "xor":
-                            env[var] = [a ^ b for a, b in zip(o1, o2)]
+                            env[var] = [
+                                z3.Xor(a, b) if (isinstance(a, z3.BoolRef) and isinstance(b, z3.BoolRef)) else (a ^ b)
+                                for a, b in zip(o1, o2)
+                            ]
+                        elif op == "icmp":
+                            cond = next(
+                                (
+                                    t
+                                    for t in tokens[1:]
+                                    if t in ("eq", "ne", "slt", "sle", "sgt", "sge", "ult", "ule", "ugt", "uge")
+                                ),
+                                tokens[1],
+                            )
+                            if cond == "eq":
+                                env[var] = [a == b for a, b in zip(o1, o2)]
+                            elif cond == "ne":
+                                env[var] = [a != b for a, b in zip(o1, o2)]
+                            elif cond == "slt":
+                                env[var] = [a < b for a, b in zip(o1, o2)]
+                            elif cond == "sle":
+                                env[var] = [a <= b for a, b in zip(o1, o2)]
+                            elif cond == "sgt":
+                                env[var] = [a > b for a, b in zip(o1, o2)]
+                            elif cond == "sge":
+                                env[var] = [a >= b for a, b in zip(o1, o2)]
+                            elif cond == "ult":
+                                env[var] = [z3.ULT(a, b) for a, b in zip(o1, o2)]
+                            elif cond == "ule":
+                                env[var] = [z3.ULE(a, b) for a, b in zip(o1, o2)]
+                            elif cond == "ugt":
+                                env[var] = [z3.UGT(a, b) for a, b in zip(o1, o2)]
+                            elif cond == "uge":
+                                env[var] = [z3.UGE(a, b) for a, b in zip(o1, o2)]
                         continue
 
                     if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BitVecRef) and o2.size() == 1:
@@ -1161,21 +1271,48 @@ class SymbolicIRVerifier:
 
                 elif len(operands) == 1:
                     o = operands[0]
+                    target_width = self._parse_width(tokens[-1].rstrip(">"))
                     if op == "zext":
-                        target_width = self._parse_width(tokens[-1])
-                        if isinstance(o, z3.BoolRef):
-                            o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
-                        if hasattr(o, "size") and target_width > o.size():
-                            env[var] = z3.ZeroExt(target_width - o.size(), o)
+                        if isinstance(o, list):
+                            res_lanes = []
+                            for ln in o:
+                                if isinstance(ln, z3.BoolRef):
+                                    ln = z3.If(ln, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+                                if hasattr(ln, "size") and target_width > ln.size():
+                                    res_lanes.append(z3.ZeroExt(target_width - ln.size(), ln))
+                                else:
+                                    res_lanes.append(ln)
+                            env[var] = res_lanes
+                        else:
+                            if isinstance(o, z3.BoolRef):
+                                o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+                            if hasattr(o, "size") and target_width > o.size():
+                                env[var] = z3.ZeroExt(target_width - o.size(), o)
                     elif op == "sext":
-                        target_width = self._parse_width(tokens[-1])
-                        if isinstance(o, z3.BoolRef):
-                            o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
-                        if hasattr(o, "size") and target_width > o.size():
-                            env[var] = z3.SignExt(target_width - o.size(), o)
+                        if isinstance(o, list):
+                            res_lanes = []
+                            for ln in o:
+                                if isinstance(ln, z3.BoolRef):
+                                    ln = z3.If(ln, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+                                if hasattr(ln, "size") and target_width > ln.size():
+                                    res_lanes.append(z3.SignExt(target_width - ln.size(), ln))
+                                else:
+                                    res_lanes.append(ln)
+                            env[var] = res_lanes
+                        else:
+                            if isinstance(o, z3.BoolRef):
+                                o = z3.If(o, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+                            if hasattr(o, "size") and target_width > o.size():
+                                env[var] = z3.SignExt(target_width - o.size(), o)
                     elif op == "trunc":
-                        target_width = self._parse_width(tokens[-1])
-                        if hasattr(o, "size") and target_width < o.size():
+                        if isinstance(o, list):
+                            env[var] = [
+                                z3.Extract(target_width - 1, 0, ln)
+                                if (hasattr(ln, "size") and target_width < ln.size())
+                                else ln
+                                for ln in o
+                            ]
+                        elif hasattr(o, "size") and target_width < o.size():
                             env[var] = z3.Extract(target_width - 1, 0, o)
                     elif op in ("bitcast", "load", "freeze"):
                         env[var] = o

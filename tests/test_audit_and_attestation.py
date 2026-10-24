@@ -1204,3 +1204,62 @@ entry:
         assert res_alias.verdict == "FAILED"
         assert res_alias.proved is False
         assert res_alias.counterexample is not None
+
+    def test_simd_vector_predication_casts_and_intrinsics_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. Predicated vector icmp sgt + select <4 x i1> vs @llvm.smax.v4i32 -> PROVED
+        src_pred_max = """
+        define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {
+        entry:
+          %cmp = icmp sgt <4 x i32> %a, %b
+          %res = select <4 x i1> %cmp, <4 x i32> %a, <4 x i32> %b
+          ret <4 x i32> %res
+        }
+        """
+        tgt_smax_intr = """
+        define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {
+        entry:
+          %res = call <4 x i32> @llvm.smax.v4i32(<4 x i32> %a, <4 x i32> %b)
+          ret <4 x i32> %res
+        }
+        """
+        res_ok = verify_ir_equivalence(src_pred_max, tgt_smax_intr)
+        assert res_ok.verdict == "PROVED"
+        assert res_ok.proved is True
+
+        # 2. Vector mask sext <4 x i1> to <4 x i32> bitwise blend vs predicated select -> PROVED
+        src_mask_blend = """
+        define <4 x i32> @vec_relu(<4 x i32> %x) {
+        entry:
+          %pos = icmp sgt <4 x i32> %x, zeroinitializer
+          %mask = sext <4 x i1> %pos to <4 x i32>
+          %res = and <4 x i32> %x, %mask
+          ret <4 x i32> %res
+        }
+        """
+        tgt_select_relu = """
+        define <4 x i32> @vec_relu(<4 x i32> %x) {
+        entry:
+          %pos = icmp sgt <4 x i32> %x, zeroinitializer
+          %res = select <4 x i1> %pos, <4 x i32> %x, <4 x i32> <i32 0, i32 0, i32 0, i32 0>
+          ret <4 x i32> %res
+        }
+        """
+        res_relu = verify_ir_equivalence(src_mask_blend, tgt_select_relu)
+        assert res_relu.verdict == "PROVED"
+        assert res_relu.proved is True
+
+        # 3. Inverted predicate bug (icmp slt vs @llvm.smax.v4i32) -> FAILED
+        src_buggy_pred = """
+        define <4 x i32> @vec_max(<4 x i32> %a, <4 x i32> %b) {
+        entry:
+          %cmp = icmp slt <4 x i32> %a, %b
+          %res = select <4 x i1> %cmp, <4 x i32> %a, <4 x i32> %b
+          ret <4 x i32> %res
+        }
+        """
+        res_bug = verify_ir_equivalence(src_buggy_pred, tgt_smax_intr)
+        assert res_bug.verdict == "FAILED"
+        assert res_bug.proved is False
+        assert res_bug.counterexample is not None
