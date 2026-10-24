@@ -271,4 +271,8 @@ print("="*80)
 print("Demo complete! Total time: ~45 seconds")
 print("="*80)
 
-# Made with Bob
+for _res in (result1, result2, result3):
+    _bpath = _res.get("binary_path")
+    if _bpath and os.path.exists(_bpath):
+        os.unlink(_bpath)
+

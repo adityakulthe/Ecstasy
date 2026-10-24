@@ -707,3 +707,57 @@ entry:
         assert "CWE-120" in rule_ids
         assert "CWE-416" in rule_ids
 
+    def test_overflow_checked_intrinsics_and_extractvalue_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        checked_add_ir = """
+define i32 @checked_uadd_clamp(i32 %a, i32 %b) {
+entry:
+  %pair = call { i32, i1 } @llvm.uadd.with.overflow.i32(i32 %a, i32 %b)
+  %sum = extractvalue { i32, i1 } %pair, 0
+  %ovf = extractvalue { i32, i1 } %pair, 1
+  %res = select i1 %ovf, i32 -1, i32 %sum
+  ret i32 %res
+}
+"""
+        manual_uadd_clamp_ir = """
+define i32 @checked_uadd_clamp(i32 %a, i32 %b) {
+entry:
+  %sum = add i32 %a, %b
+  %ovf = icmp ult i32 %sum, %a
+  %res = select i1 %ovf, i32 -1, i32 %sum
+  ret i32 %res
+}
+"""
+        broken_uadd_ir = """
+define i32 @checked_uadd_clamp(i32 %a, i32 %b) {
+entry:
+  %sum = add i32 %a, %b
+  ret i32 %sum
+}
+"""
+        r_ok = verify_ir_equivalence(checked_add_ir, manual_uadd_clamp_ir)
+        assert r_ok.verdict == VerificationVerdict.PROVED
+        assert r_ok.proved is True
+
+        r_bad = verify_ir_equivalence(checked_add_ir, broken_uadd_ir)
+        assert r_bad.verdict == VerificationVerdict.FAILED
+        assert r_bad.proved is False
+
+    def test_cegar_supervisor_clang_optimization_fallback(self):
+        from agents.cegar_supervisor import CEGARSupervisor
+        unopt_ir = """
+define i32 @square_val(i32 %x) optnone noinline {
+entry:
+  %slot = alloca i32, align 4
+  store i32 %x, ptr %slot, align 4
+  %v1 = load i32, ptr %slot, align 4
+  %v2 = load i32, ptr %slot, align 4
+  %prod = mul nsw i32 %v1, %v2
+  ret i32 %prod
+}
+"""
+        sup = CEGARSupervisor(max_iterations=2)
+        opt_ir = sup._apply_optimization(unopt_ir, "performance")
+        assert "alloca i32" not in opt_ir
+        assert "mul nsw i32" in opt_ir
+

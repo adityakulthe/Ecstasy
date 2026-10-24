@@ -49,22 +49,10 @@ def run_alive2(src_ir: str, tgt_ir: str) -> tuple[bool, str]:
             os.unlink(src_path)
             os.unlink(tgt_path)
     
-    # Mathematical verification fallback when alive-tv binary is not present
-    if "add nsw" in src_ir and "add nsw" not in tgt_ir:
-        simulated_output = """Transformation doesn't verify!
-ERROR: Target is more undefined than source for safe_add
-
-Example:
-i32 %a = 2147483647 (0x7fffffff)
-i32 %b = 1 (0x1)
-Source: poison
-Target: -2147483648 (0x80000000)
-"""
-        return False, simulated_output
-    elif src_ir.strip() == tgt_ir.strip() or ("add nsw" in tgt_ir and "add nsw" in src_ir):
-        return True, "Transformation seems to be correct!\n1 correct transformation\n0 incorrect transformations"
-    else:
-        return False, "Transformation doesn't verify!"
+    # Real Z3 SMT formal verification when alive-tv binary is not present
+    from engine.symbolic_verifier import verify_ir_equivalence
+    report = verify_ir_equivalence(src_ir, tgt_ir)
+    return report.proved, report.output
 
 if __name__ == "__main__":
     print("=" * 60)

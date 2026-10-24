@@ -4,10 +4,10 @@ AI Compiler - Retry Loop Demo
 Shows Granite proposing optimization, Alive2 catching error, Granite fixing it
 This is the winning demo moment: AI creativity + mathematical proof
 """
-import os, tempfile, subprocess, re
+import os, sys, tempfile, subprocess, re
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from dotenv import load_dotenv
-from ibm_watsonx_ai import Credentials
-from ibm_watsonx_ai.foundation_models import ModelInference
+from engine.symbolic_verifier import verify_ir_equivalence
 
 load_dotenv()
 
@@ -16,6 +16,8 @@ def get_demo_model():
     global model
     if model is None and os.getenv("WATSONX_URL") and os.getenv("WATSONX_APIKEY"):
         try:
+            from ibm_watsonx_ai import Credentials
+            from ibm_watsonx_ai.foundation_models import ModelInference
             model = ModelInference(
                 model_id="ibm/granite-4-h-small",
                 credentials=Credentials(url=os.getenv("WATSONX_URL"), api_key=os.getenv("WATSONX_APIKEY")),
@@ -26,7 +28,7 @@ def get_demo_model():
     return model
 
 def run_alive2(original_ir, optimized_ir):
-    """Run Alive2 formal verification"""
+    """Run Alive2 / Z3 SMT formal verification"""
     import shutil
     alive_bin = shutil.which('alive-tv') or (
         '/opt/homebrew/bin/alive-tv' if os.path.exists('/opt/homebrew/bin/alive-tv') else None
@@ -40,23 +42,9 @@ def run_alive2(original_ir, optimized_ir):
         os.unlink(orig.name)
         os.unlink(opt.name)
         return result.stdout + result.stderr
-        
-    # Mathematical simulation fallback when Alive2 binary is not installed
-    if "shl i32" in optimized_ir:
-        return """Transformation doesn't verify!
-ERROR: Value mismatch
 
-Example:
-i32 %a = 2
-i32 %b = 3
-Source: 5
-Target: 4
-1 incorrect transformation
-"""
-    elif original_ir.strip() == optimized_ir.strip():
-        return "Transformation seems to be correct!\n1 correct transformation\n0 incorrect transformations"
-    else:
-        return "Transformation seems to be correct!\n1 correct transformation\n0 incorrect transformations"
+    report = verify_ir_equivalence(original_ir, optimized_ir)
+    return report.output
 
 def ask_granite(messages):
     """Ask Granite for IR optimization"""

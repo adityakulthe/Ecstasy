@@ -85,14 +85,20 @@ if optimized_ir:
         print("🧠 GRANITE'S REASONING PROCESS:")
         print("-" * 80)
         for log in metadata['reasoning_logs']:
-            print(f"\n   Iteration {log.iteration}:")
-            print(f"   Verdict: {log.verdict}")
-            if log.counterexample:
-                print(f"   Counterexample found: {log.counterexample.failure_type}")
-                print(f"   Root cause: {log.counterexample.root_cause}")
+            it = log.get('iteration') if isinstance(log, dict) else getattr(log, 'iteration', '?')
+            verdict = log.get('verdict') if isinstance(log, dict) else getattr(log, 'verdict', 'UNKNOWN')
+            ce = log.get('counterexample') if isinstance(log, dict) else getattr(log, 'counterexample', None)
+            patch = log.get('patch_applied') if isinstance(log, dict) else getattr(log, 'patch_applied', None)
+            print(f"\n   Iteration {it}:")
+            print(f"   Verdict: {verdict}")
+            if ce:
+                f_type = ce.get('failure_type') if isinstance(ce, dict) else getattr(ce, 'failure_type', '')
+                r_cause = ce.get('root_cause') if isinstance(ce, dict) else getattr(ce, 'root_cause', '')
+                print(f"   Counterexample found: {f_type}")
+                print(f"   Root cause: {r_cause}")
                 print(f"   Granite's response: Generated targeted fix")
-            if log.patch_applied:
-                print(f"   Patch applied: {log.patch_applied[:100]}...")
+            if patch:
+                print(f"   Patch applied: {str(patch)[:100]}...")
     
     print()
     print("🎯 KEY INSIGHT:")

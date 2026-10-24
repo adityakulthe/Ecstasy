@@ -51,7 +51,7 @@ print()
 print("=" * 70)
 print()
 
-supervisor = CompilerSupervisor(max_retries=1)
+supervisor = CompilerSupervisor(max_retries=1, use_advanced_agents=True)
 result = supervisor.supervise_compilation(complex_code, filename="test.c")
 
 print()
@@ -63,7 +63,7 @@ print(f"✅ Verdict: {result['final_verdict']}")
 print(f"✅ Binary: {result.get('binary_path', 'N/A')}")
 print(f"✅ Certificate: {result.get('certificate_id', 'N/A')}")
 print()
-print(f"🤖 Active Agents: {len(result['phases_completed'])}/9")
+print(f"🤖 Active Agents: {result.get('total_agents', len(result['phases_completed']))}/9")
 print("   Phases completed:")
 for i, phase in enumerate(result['phases_completed'], 1):
     print(f"   {i}. {phase}")
@@ -72,4 +72,6 @@ print(f"🔄 Total Retries: {result['total_retries_used']}")
 print(f"⚠️  Fallback Used: {result['fallback_used']}")
 print("=" * 70)
 
-# Made with Bob
+if result.get("binary_path") and os.path.exists(result["binary_path"]):
+    os.unlink(result["binary_path"])
+

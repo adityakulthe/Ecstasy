@@ -563,23 +563,32 @@ Fix ONLY the specific issue above. Return raw IR only, no markdown:
                     opt_path = path
                     break
         
-        if not opt_path:
-            print("   ⚠️  opt not found, skipping LLVM optimization")
-            return ir_code
-        
-        passes = "mem2reg,dce,instcombine" if opt_type == "performance" else "mem2reg"
         sanitized_ir = re.sub(r'\boptnone\b', '', ir_code)
         with tempfile.NamedTemporaryFile(suffix='.ll', mode='w', delete=False) as f:
             f.write(sanitized_ir)
             path = f.name
         out = path.replace('.ll', '_opt.ll')
         try:
-            r = subprocess.run([opt_path, f'-passes={passes}', '-S', path, '-o', out], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0 and os.path.exists(out):
-                with open(out, 'r') as f_out:
-                    return f_out.read()
+            if opt_path:
+                passes = "mem2reg,dce,instcombine" if opt_type == "performance" else "mem2reg"
+                r = subprocess.run([opt_path, f'-passes={passes}', '-S', path, '-o', out], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0 and os.path.exists(out):
+                    with open(out, 'r') as f_out:
+                        return f_out.read()
+                else:
+                    print(f"   ⚠️  opt failed: {r.stderr}")
             else:
-                print(f"   ⚠️  opt failed: {r.stderr}")
+                clang_path = shutil.which('clang')
+                if clang_path:
+                    opt_flag = '-O2' if opt_type == 'performance' else '-O1'
+                    r = subprocess.run(
+                        [clang_path, '-S', '-emit-llvm', opt_flag, '-x', 'ir', path, '-o', out, '-Wno-override-module'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if r.returncode == 0 and os.path.exists(out):
+                        with open(out, 'r') as f_out:
+                            return f_out.read()
+                print("   ⚠️  opt not found, skipping LLVM optimization")
         finally:
             for p in (path, out):
                 try:

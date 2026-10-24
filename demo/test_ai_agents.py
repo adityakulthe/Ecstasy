@@ -36,4 +36,6 @@ print(f"✅ Phases: {result['phases_completed']}")
 print(f"✅ Binary: {result.get('binary_path', 'N/A')}")
 print("=" * 60)
 
-# Made with Bob
+if result.get("binary_path") and os.path.exists(result["binary_path"]):
+    os.unlink(result["binary_path"])
+

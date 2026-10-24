@@ -11,8 +11,7 @@ import os, sys, tempfile, subprocess, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from dotenv import load_dotenv
-from ibm_watsonx_ai import Credentials
-from ibm_watsonx_ai.foundation_models import ModelInference
+from engine.symbolic_verifier import verify_ir_equivalence
 
 load_dotenv()
 
@@ -21,6 +20,8 @@ def get_demo_model():
     global model
     if model is None and os.getenv("WATSONX_URL") and os.getenv("WATSONX_APIKEY"):
         try:
+            from ibm_watsonx_ai import Credentials
+            from ibm_watsonx_ai.foundation_models import ModelInference
             model = ModelInference(
                 model_id="ibm/granite-4-h-small",
                 credentials=Credentials(
@@ -80,22 +81,9 @@ def run_alive2(src, tgt):
         finally:
             os.unlink(src_path); os.unlink(tgt_path)
 
-    # Formal verification fallback when alive-tv binary is not installed
-    if "%sum    = add i32 %low, %high" in tgt or ("add i32 %low, %high" in tgt and "sub" not in tgt):
-        return """Transformation doesn't verify!
-ERROR: Value mismatch for midpoint
-
-Example:
-i32 %low  = 1500000000 (0x59682f00)
-i32 %high = 1500000000 (0x59682f00)
-Source: 1500000000
-Target: -647483648
-1 incorrect transformation
-"""
-    elif src.strip() == tgt.strip() or ("sub nsw" in tgt and "add nsw" in tgt):
-        return "Transformation seems to be correct!\n1 correct transformation\n0 incorrect transformations"
-    else:
-        return "Transformation doesn't verify!"
+    # Real Z3 SMT formal verification when alive-tv binary is not installed
+    report = verify_ir_equivalence(src, tgt)
+    return report.output
 
 def ask_granite(messages):
     m = get_demo_model()

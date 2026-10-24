@@ -272,6 +272,12 @@ class SymbolicIRVerifier:
                     "@llvm.cttz.",
                     "@llvm.fshl.",
                     "@llvm.fshr.",
+                    "@llvm.sadd.with.overflow.",
+                    "@llvm.uadd.with.overflow.",
+                    "@llvm.ssub.with.overflow.",
+                    "@llvm.usub.with.overflow.",
+                    "@llvm.smul.with.overflow.",
+                    "@llvm.umul.with.overflow.",
                 )
             ):
                 return params, None, overflow_checks
@@ -362,7 +368,55 @@ class SymbolicIRVerifier:
                 is_nsw = "nsw" in tokens
                 is_nuw = "nuw" in tokens
 
+                if op == "extractvalue":
+                    agg_reg = None
+                    for t in tokens[1:-1]:
+                        t_clean = t.rstrip(",").strip()
+                        if t_clean.startswith("%"):
+                            agg_reg = t_clean
+                    idx_tok = tokens[-1].rstrip(",").strip()
+                    if agg_reg and agg_reg in env and isinstance(env[agg_reg], tuple) and idx_tok.isdigit():
+                        idx = int(idx_tok)
+                        if 0 <= idx < len(env[agg_reg]):
+                            env[var] = env[agg_reg][idx]
+                            if idx == 1:
+                                last_cond = env[var]
+                            continue
+                    return params, None, overflow_checks
+
                 if op == "call":
+                    # Handle overflow-checked arithmetic intrinsics returning { iN, i1 }
+                    m_ovf = re.search(
+                        r"@(llvm\.(?:sadd|uadd|ssub|usub|smul|umul)\.with\.overflow)\.[a-z0-9.]+\((.*?)\)",
+                        expr,
+                    )
+                    if m_ovf:
+                        ovf_intr = m_ovf.group(1)
+                        arg_tokens = m_ovf.group(2).replace(",", " ").split()
+                        ovf_ops = self._parse_operands(arg_tokens, env)
+                        if len(ovf_ops) >= 2:
+                            o1, o2 = ovf_ops[0], ovf_ops[1]
+                            if ovf_intr == "llvm.sadd.with.overflow":
+                                res_bv = o1 + o2
+                                ovf_bool = z3.Not(z3.And(z3.BVAddNoOverflow(o1, o2, True), z3.BVAddNoUnderflow(o1, o2)))
+                            elif ovf_intr == "llvm.uadd.with.overflow":
+                                res_bv = o1 + o2
+                                ovf_bool = z3.Not(z3.BVAddNoOverflow(o1, o2, False))
+                            elif ovf_intr == "llvm.ssub.with.overflow":
+                                res_bv = o1 - o2
+                                ovf_bool = z3.Not(z3.And(z3.BVSubNoOverflow(o1, o2), z3.BVSubNoUnderflow(o1, o2, True)))
+                            elif ovf_intr == "llvm.usub.with.overflow":
+                                res_bv = o1 - o2
+                                ovf_bool = z3.Not(z3.BVSubNoUnderflow(o1, o2, False))
+                            elif ovf_intr == "llvm.smul.with.overflow":
+                                res_bv = o1 * o2
+                                ovf_bool = z3.Not(z3.And(z3.BVMulNoOverflow(o1, o2, True), z3.BVMulNoUnderflow(o1, o2)))
+                            else:
+                                res_bv = o1 * o2
+                                ovf_bool = z3.Not(z3.BVMulNoOverflow(o1, o2, False))
+                            env[var] = (res_bv, ovf_bool)
+                            continue
+
                     # Handle pure bitvector LLVM intrinsics
                     m_intr = re.search(
                         r"@(llvm\.(?:smax|smin|umax|umin|abs|bswap|ctpop|ctlz|cttz|fshl|fshr))\.[a-z0-9.]+\((.*?)\)",
@@ -545,6 +599,10 @@ class SymbolicIRVerifier:
 
                 if len(operands) >= 2:
                     o1, o2 = operands[0], operands[1]
+                    if isinstance(o1, z3.BoolRef) and isinstance(o2, z3.BitVecRef) and o2.size() == 1:
+                        o1 = z3.If(o1, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
+                    elif isinstance(o2, z3.BoolRef) and isinstance(o1, z3.BitVecRef) and o1.size() == 1:
+                        o2 = z3.If(o2, z3.BitVecVal(1, 1), z3.BitVecVal(0, 1))
                     # Ensure same bit width for bitvectors
                     if hasattr(o1, "size") and hasattr(o2, "size"):
                         if o1.size() < o2.size():
