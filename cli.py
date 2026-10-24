@@ -193,6 +193,13 @@ def cmd_audit(args):
             json.dump(report_data, f, indent=2)
         print(f"📄 Audit report exported to: {report_p}")
 
+    if getattr(args, "sarif", None):
+        from server.mcp_server import export_sarif_report
+        sarif_p = Path(args.sarif)
+        export_sarif_report(audit_records, str(sarif_p))
+        print(f"🛡️  SARIF 2.1.0 report exported to: {sarif_p}")
+
+
 
 def cmd_verify(args):
     p1 = Path(args.orig)
@@ -467,7 +474,9 @@ def main():
     audit_p = subparsers.add_parser("audit", help="Audit an entire directory or project for memory vulnerabilities")
     audit_p.add_argument("path", help="Directory path to recursively scan and audit")
     audit_p.add_argument("--report", help="Export audit findings to JSON report file")
+    audit_p.add_argument("--sarif", help="Export audit findings in OASIS SARIF v2.1.0 format")
     audit_p.add_argument("--offline", action="store_true", help="Run deterministic checks without cloud AI")
+
 
     # benchmark
     bench_p = subparsers.add_parser("benchmark", help="Benchmark IR optimization, CWE security audit, and Z3 verification across a corpus")

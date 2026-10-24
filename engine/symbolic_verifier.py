@@ -226,12 +226,22 @@ class SymbolicIRVerifier:
         local_allocas: set[str] = set()
         last_cond = None
         last_br_labels: Optional[Tuple[str, str]] = None
+        switch_cond_map: Dict[str, Any] = {}
+        switch_default_label: Optional[str] = None
         current_label: Optional[str] = "entry"
         visited_labels = {"entry"}
         ret_expr = None
         overflow_checks: List[Any] = []
 
-        for line in body.splitlines():
+        # Collapse multi-line switch [ ... ] blocks into single lines
+        normalized_body = re.sub(
+            r"(switch\s+[^\[]+\[)([^\]]*)(\])",
+            lambda m: m.group(1) + " " + " ".join(m.group(2).split()) + " " + m.group(3),
+            body,
+            flags=re.DOTALL,
+        )
+
+        for line in normalized_body.splitlines():
             line = line.strip()
             if ";" in line:
                 line = line[:line.index(";")]
@@ -269,6 +279,35 @@ class SymbolicIRVerifier:
             # Store instruction
             if line.startswith("store "):
                 self._handle_store(line, env, memory_store, current_label, last_cond, last_br_labels)
+                continue
+
+            # Switch instruction: switch i32 %val, label %default [ i32 0, label %bb0 i32 1, label %bb1 ]
+            if line.startswith("switch "):
+                m_sw = re.match(
+                    r"switch\s+(i\d+)\s+(%[\w.]+|-?\d+)\s*,\s*label\s+(%[\w.]+)\s*\[(.*)\]",
+                    line,
+                )
+                if m_sw:
+                    sw_ty, sw_val_str, def_lbl, cases_blob = m_sw.groups()
+                    sw_w = self._parse_width(sw_ty)
+                    sw_bv = (
+                        env.get(sw_val_str)
+                        if sw_val_str.startswith("%")
+                        else z3.BitVecVal(int(sw_val_str), sw_w)
+                    )
+                    if sw_bv is not None:
+                        switch_default_label = def_lbl.strip()
+                        switch_cond_map.clear()
+                        for case_val_str, case_lbl in re.findall(
+                            r"i\d+\s+(-?\d+)\s*,\s*label\s+(%[\w.]+)", cases_blob
+                        ):
+                            c_bv = z3.BitVecVal(int(case_val_str), sw_w)
+                            c_lbl = case_lbl.strip()
+                            cond_c = (sw_bv == c_bv)
+                            if c_lbl in switch_cond_map:
+                                switch_cond_map[c_lbl] = z3.Or(switch_cond_map[c_lbl], cond_c)
+                            else:
+                                switch_cond_map[c_lbl] = cond_c
                 continue
 
             # Unconditional branch: check for loop back-edges
@@ -453,13 +492,38 @@ class SymbolicIRVerifier:
                 if op == "phi":
                     # E.g. %res = phi i32 [ %neg, %then ], [ %a, %else ]
                     phi_pairs = re.findall(r"\[\s*([^,]+?)\s*,\s*([^\]]+?)\s*\]", expr)
+                    w = self._parse_width(tokens[1]) if len(tokens) > 1 else 32
+                    if switch_cond_map and len(phi_pairs) >= 2:
+                        def _resolve_phi_val(v_s: str) -> Any:
+                            v_s = v_s.strip()
+                            if v_s in env:
+                                return env[v_s]
+                            if v_s.lstrip("-").isdigit():
+                                return z3.BitVecVal(int(v_s), w)
+                            return z3.BitVec(f"phi_{v_s.lstrip('%')}", w)
+
+                        default_bv = None
+                        case_branches: List[Tuple[Any, Any]] = []
+                        for val_s, lbl_s in phi_pairs:
+                            lbl_clean = lbl_s.strip()
+                            bv_val = _resolve_phi_val(val_s)
+                            if lbl_clean in switch_cond_map:
+                                case_branches.append((switch_cond_map[lbl_clean], bv_val))
+                            else:
+                                default_bv = bv_val
+                        if default_bv is None and phi_pairs:
+                            default_bv = _resolve_phi_val(phi_pairs[-1][0])
+                        acc_phi = default_bv
+                        for c_cond, c_val in reversed(case_branches):
+                            acc_phi = z3.If(c_cond, c_val, acc_phi)
+                        env[var] = acc_phi
+                        continue
                     if len(phi_pairs) >= 2 and last_cond is not None:
                         (v1_str, lbl1), (v2_str, lbl2) = phi_pairs[0], phi_pairs[1]
                         v1_str, lbl1 = v1_str.strip(), lbl1.strip()
                         v2_str, lbl2 = v2_str.strip(), lbl2.strip()
                         if last_br_labels and lbl1 == last_br_labels[1] and lbl2 == last_br_labels[0]:
                             v1_str, v2_str = v2_str, v1_str
-                        w = self._parse_width(tokens[1]) if len(tokens) > 1 else 32
                         v1 = env.get(v1_str, z3.BitVecVal(int(v1_str), w) if v1_str.lstrip("-").isdigit() else z3.BitVec(f"phi_{v1_str.lstrip('%')}", w))
                         v2 = env.get(v2_str, z3.BitVecVal(int(v2_str), w) if v2_str.lstrip("-").isdigit() else z3.BitVec(f"phi_{v2_str.lstrip('%')}", w))
                         cond_expr = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond

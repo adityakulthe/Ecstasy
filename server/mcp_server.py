@@ -413,6 +413,69 @@ def apply_memory_safety(ir_code: str, use_ai: bool = True, verbose: bool = True)
         }
 
 
+def export_sarif_report(audit_records: list, output_path: str) -> Dict[str, Any]:
+    """
+    Export CWE-mapped memory safety audit records in OASIS SARIF v2.1.0 format
+    for GitHub Code Scanning / GitHub Advanced Security integration.
+    """
+    import json
+
+    rules_map: Dict[str, Dict[str, Any]] = {}
+    sarif_results = []
+
+    for rec in audit_records:
+        file_uri = str(rec.get("file", "unknown.c"))
+        for finding in rec.get("findings", []):
+            m_cwe = re.match(r"^(CWE-[0-9/]+):\s*(.*)$", finding)
+            rule_id = m_cwe.group(1) if m_cwe else "ECSTASY-MEM-001"
+            msg_text = m_cwe.group(2) if m_cwe else finding
+            if rule_id not in rules_map:
+                rules_map[rule_id] = {
+                    "id": rule_id,
+                    "name": f"MemorySafetyGuard_{rule_id.replace('-', '_').replace('/', '_')}",
+                    "shortDescription": {"text": f"Ecstasy LLVM IR Memory & UB Check ({rule_id})"},
+                    "defaultConfiguration": {"level": "warning"},
+                }
+            sarif_results.append(
+                {
+                    "ruleId": rule_id,
+                    "level": "warning",
+                    "message": {"text": msg_text},
+                    "locations": [
+                        {
+                            "physicalLocation": {
+                                "artifactLocation": {"uri": file_uri},
+                                "region": {"startLine": 1},
+                            }
+                        }
+                    ],
+                }
+            )
+
+    sarif_payload = {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "Ecstasy Memory Sentinel",
+                        "informationUri": "https://github.com/adityakulthe/Ecstasy",
+                        "version": "2.0.0",
+                        "rules": list(rules_map.values()),
+                    }
+                },
+                "results": sarif_results,
+            }
+        ],
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(sarif_payload, f, indent=2)
+    return sarif_payload
+
+
+
 def _verify_ir_semantics(orig_ir: str, opt_ir: str) -> tuple[bool, str]:
     """
     Symbolic semantic verification fallback using Z3 SMT solver.

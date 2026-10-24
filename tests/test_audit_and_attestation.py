@@ -650,3 +650,60 @@ entry:
         assert res["all_proved"] is True
         assert res["overall_reduction_pct"] > 25.0
         assert res["total_cwe_guards"] >= 40
+
+    def test_switch_and_multi_predecessor_phi_symbolic_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence, VerificationVerdict
+        switch_ir = """
+define i32 @dispatch(i32 %x) {
+entry:
+  switch i32 %x, label %sw.default [
+    i32 0, label %sw.bb0
+    i32 1, label %sw.bb1
+  ]
+sw.bb0:
+  br label %sw.epilog
+sw.bb1:
+  br label %sw.epilog
+sw.default:
+  br label %sw.epilog
+sw.epilog:
+  %res = phi i32 [ 10, %sw.bb0 ], [ 20, %sw.bb1 ], [ 99, %sw.default ]
+  ret i32 %res
+}
+"""
+        select_ir = """
+define i32 @dispatch(i32 %x) {
+entry:
+  %c1 = icmp eq i32 %x, 1
+  %s1 = select i1 %c1, i32 20, i32 99
+  %c0 = icmp eq i32 %x, 0
+  %res = select i1 %c0, i32 10, i32 %s1
+  ret i32 %res
+}
+"""
+        report = verify_ir_equivalence(switch_ir, select_ir)
+        assert report.verdict == VerificationVerdict.PROVED
+        assert report.proved is True
+
+    def test_sarif_2_1_0_security_report_export(self, tmp_path):
+        from server.mcp_server import export_sarif_report
+        records = [
+            {
+                "file": "demo_corpus/unsafe/buffer_overflow.c",
+                "checks_injected": 2,
+                "status": "hardened",
+                "findings": [
+                    "CWE-120: Unsafe C library call (@strcpy): destination buffer bounds guard required",
+                    "CWE-416: Use-after-free pointer dereference after @free in @use_after_free_demo",
+                ],
+            }
+        ]
+        sarif_file = tmp_path / "audit.sarif"
+        payload = export_sarif_report(records, str(sarif_file))
+        assert sarif_file.exists()
+        assert payload["version"] == "2.1.0"
+        assert len(payload["runs"][0]["results"]) == 2
+        rule_ids = {r["ruleId"] for r in payload["runs"][0]["results"]}
+        assert "CWE-120" in rule_ids
+        assert "CWE-416" in rule_ids
+
