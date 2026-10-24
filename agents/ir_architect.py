@@ -41,24 +41,17 @@ class _LazyModelProxy:
             raise RuntimeError("WATSONX credentials not configured or client initialization failed")
         return m.chat(*args, **kwargs)
 
+from agents.agent_rules import (
+    IR_ARCHITECT_SYSTEM_RULES,
+    compact_ir_for_llm,
+    clean_llm_ir_response,
+    validate_llm_ir_output,
+)
+
+_get_watsonx_model = get_model
 model = _LazyModelProxy()
 
-SYSTEM_PROMPT = """You are an expert LLVM IR optimizer that MUST preserve program semantics.
-INPUT: Raw LLVM IR text.
-OUTPUT: Only the modified LLVM IR — no explanation, no markdown fences, no commentary.
-
-CRITICAL RULES:
-1. NEVER change the computational result or behavior of any function
-2. Preserve ALL function signatures and type signatures exactly
-3. Only apply SAFE optimizations:
-   - Dead code elimination (unreachable code only)
-   - Instruction reordering (only when dependencies allow)
-   - Register renaming
-4. DO NOT simplify or modify arithmetic operations
-5. DO NOT remove or change any computations
-6. When in doubt, return the IR UNCHANGED
-7. Return raw IR text only, no markdown
-8. ALWAYS return COMPLETE IR with all closing braces"""
+SYSTEM_PROMPT = IR_ARCHITECT_SYSTEM_RULES
 
 def is_valid_ir(ir_text: str) -> bool:
     """Validate IR is complete and well-formed"""
@@ -105,23 +98,18 @@ def optimize_ir_deterministic(ir: str) -> str:
 def run(ir: str) -> str:
     if get_model() is not None:
         try:
+            compacted_ir = compact_ir_for_llm(ir)
             response = model.chat(messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Optimize this LLVM IR. If you cannot safely optimize it, return it EXACTLY as provided:\n\n{ir}"}
+                {"role": "user", "content": f"Optimize this LLVM IR. If you cannot safely optimize it, return it EXACTLY as provided:\n\n{compacted_ir}"}
             ], params={"max_new_tokens": 8192, "temperature": 0.1})
-            output = response["choices"][0]["message"]["content"].strip()
-            # Strip markdown fences if Granite adds them anyway
-            output = re.sub(r"^```[a-z]*\n?", "", output, flags=re.MULTILINE)
-            output = re.sub(r"\n?```$", "", output, flags=re.MULTILINE)
-            result = output.strip()
+            raw_output = response["choices"][0]["message"]["content"]
+            result = clean_llm_ir_response(raw_output)
             
-            # Validate that the output is valid and complete LLVM IR
-            if not result or "define" not in result:
-                print("  ⚠️  Invalid IR output, using deterministic fallback")
-                return optimize_ir_deterministic(ir)
-            
-            if not is_valid_ir(result):
-                print("  ⚠️  Granite output truncated — using deterministic fallback")
+            # Fast structural & SSA pre-gate before Z3/Alive2 verification
+            valid_struct, reason = validate_llm_ir_output(ir, result)
+            if not valid_struct or "define" not in result or not is_valid_ir(result):
+                print(f"  ⚠️  LLM IR rejected by pre-gate ({reason}) — using deterministic fallback")
                 return optimize_ir_deterministic(ir)
             
             return result

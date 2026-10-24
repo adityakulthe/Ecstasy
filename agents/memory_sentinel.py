@@ -38,22 +38,17 @@ class _LazyModelProxy:
             raise RuntimeError("WATSONX credentials not configured or client initialization failed")
         return m.chat(*args, **kwargs)
 
+from agents.agent_rules import (
+    MEMORY_SENTINEL_SYSTEM_RULES,
+    compact_ir_for_llm,
+    clean_llm_ir_response,
+    validate_llm_ir_output,
+)
+
+_get_watsonx_model = get_model
 model = _LazyModelProxy()
 
-SYSTEM_PROMPT = """You are an expert in memory safety and LLVM IR hardening.
-INPUT: Raw LLVM IR text.
-OUTPUT: Only the hardened LLVM IR — no explanation, no markdown, no commentary.
-
-CRITICAL RULES:
-1. PRESERVE the original computation and return values exactly
-2. Only ADD safety checks, never modify existing logic
-3. For simple functions without memory operations, return them UNCHANGED
-4. Add bounds checks only for actual array/pointer operations
-5. Insert calls to @__bounds_fail() only when truly needed
-6. NEVER change arithmetic operations or return statements
-7. When in doubt, return the IR UNCHANGED
-8. Return raw IR text only, no markdown
-9. ALWAYS return COMPLETE IR with all closing braces"""
+SYSTEM_PROMPT = MEMORY_SENTINEL_SYSTEM_RULES
 
 def is_valid_ir(ir_text: str) -> bool:
     """Validate IR is complete and well-formed"""
@@ -67,29 +62,33 @@ def is_valid_ir(ir_text: str) -> bool:
     close_braces = cleaned.count('}')
     return open_braces > 0 and open_braces == close_braces
 
+def _has_memory_or_unsafe_ops(ir: str) -> bool:
+    """Fast-path check: skip LLM call if IR has no pointer indexing, memory loads/stores, or unsafe calls."""
+    markers = ("getelementptr", "load ", "store ", "@strcpy", "@strcat", "@gets", "@sprintf", "@scanf", "@free")
+    return any(m in ir for m in markers)
+
 def run(ir: str) -> str:
+    # Rule: Zero-token fast path for pure register/arithmetic functions
+    if not _has_memory_or_unsafe_ops(ir):
+        return ir
+
     if get_model() is not None:
         try:
+            compacted_ir = compact_ir_for_llm(ir)
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Harden this LLVM IR for memory safety. If there are no memory operations to harden, return it EXACTLY as provided:\n\n{ir}"}
+                {"role": "user", "content": f"Harden this LLVM IR for memory safety. If there are no memory operations to harden, return it EXACTLY as provided:\n\n{compacted_ir}"}
             ]
             response = model.chat(
                 messages=messages,
                 params={"max_new_tokens": 8192, "temperature": 0.1}
             )
-            output = response["choices"][0]["message"]["content"].strip()
-            output = re.sub(r"^```[a-z]*\n?", "", output, flags=re.MULTILINE)
-            output = re.sub(r"\n?```$", "", output, flags=re.MULTILINE)
-            result = output.strip()
+            raw_output = response["choices"][0]["message"]["content"]
+            result = clean_llm_ir_response(raw_output)
             
-            # Validate that the output is valid and complete LLVM IR
-            if not result or "define" not in result:
-                print("  ⚠️  Invalid IR output, returning original")
-                return ir
-            
-            if not is_valid_ir(result):
-                print("  ⚠️  Granite output truncated — using original IR")
+            valid_struct, reason = validate_llm_ir_output(ir, result)
+            if not valid_struct or "define" not in result or not is_valid_ir(result):
+                print(f"  ⚠️  LLM IR rejected by pre-gate ({reason}), returning original")
                 return ir
                 
             return result

@@ -517,34 +517,35 @@ Targeted Fix:
         Falls back to deterministic apply_targeted_patch when offline or if AI fails.
         """
         try:
-            from agents.ir_architect import is_valid_ir, _get_watsonx_model
-            import re
+            from agents.ir_architect import is_valid_ir, get_model
+            from agents.agent_rules import (
+                CEGAR_REFINEMENT_SYSTEM_RULES,
+                compact_ir_for_llm,
+                clean_llm_ir_response,
+                validate_llm_ir_output,
+            )
             
-            model = _get_watsonx_model()
+            model = get_model()
             if model is None:
                 return self.apply_targeted_patch(ir, ce)
             
-            # Build detailed prompt with counterexample info
-            prompt = f"""Alive2 found a bug in this LLVM IR.
+            compacted_ir = compact_ir_for_llm(ir)
+            prompt = f"""Alive2/Z3 found a bug in this LLVM IR.
 Failure type: {ce.failure_type}
 Root cause: {ce.root_cause if ce.root_cause else 'Unknown'}
 Counterexample values: {[(v.variable, v.value) for v in ce.values]}
 
 Fix ONLY the specific issue above. Return raw IR only, no markdown:
-{ir}"""
+{compacted_ir}"""
             
             r = model.chat(messages=[
-                {"role": "system", "content": "Fix the LLVM IR bug described. Raw IR only."},
+                {"role": "system", "content": CEGAR_REFINEMENT_SYSTEM_RULES},
                 {"role": "user", "content": prompt}
             ], params={"max_new_tokens": 2048, "temperature": 0.1})
             
-            out = r["choices"][0]["message"]["content"].strip()
-            # Strip markdown fences
-            out = re.sub(r"^```[a-z]*\n?", "", out, flags=re.MULTILINE)
-            out = re.sub(r"\n?```$", "", out, flags=re.MULTILINE)
-            
-            # Validate the output
-            return out if is_valid_ir(out) else self.apply_targeted_patch(ir, ce)
+            out = clean_llm_ir_response(r["choices"][0]["message"]["content"])
+            valid_struct, _ = validate_llm_ir_output(ir, out)
+            return out if (valid_struct and is_valid_ir(out)) else self.apply_targeted_patch(ir, ce)
         except Exception as e:
             print(f"  ⚠️  AI patch failed: {e}, falling back to deterministic targeted patch")
             return self.apply_targeted_patch(ir, ce)

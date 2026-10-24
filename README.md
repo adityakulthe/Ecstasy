@@ -18,7 +18,7 @@
 
 ---
 
-[![Tests](https://img.shields.io/badge/tests-71/71_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-75/75_passing-success)](tests/)
 [![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
 [![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)
@@ -605,8 +605,8 @@ pytest tests/test_integration.py -v
 | **Integration** | 17 tests | ✅ All passing |
 | **All Agents Integration** | 4 scenarios | ✅ All passing |
 | **Z3 Symbolic Verifier** | 9 tests | ✅ All passing |
-| **Audit, Attestation & Deep Regression** | 14 tests | ✅ All passing |
-| **Total** | **71 tests** | ✅ **100% passing** |
+| **Audit, Attestation & Agent Rules** | 18 tests | ✅ All passing |
+| **Total** | **75 tests** | ✅ **100% passing** |
 
 **Test Files:** All tests are located in the [`tests/`](tests/) directory with comprehensive coverage of all components.
 
@@ -1026,7 +1026,7 @@ https://github.com/adityakulthe/Ecstasy
 
 **Includes:**
 - Complete source code with all 9 coordinated agents
-- 71 passing tests across unit, agent integration, full pipeline, Z3 SMT verification, and batch security auditing
+- 75 passing tests across unit, agent integration, full pipeline, Z3 SMT verification, LLM efficiency rules, and batch security auditing
 - Standalone `ecstasy` CLI for compilation, formal verification, memory safety auditing, and attestation
 - Pure-Python Z3 SMT symbolic translation validator with counterexample generation
 - Cryptographic Safety Vault with HMAC-SHA256 tamper-evident attestation

@@ -387,3 +387,89 @@ for.body:
             if res.get("binary_path") and os.path.exists(res["binary_path"]):
                 os.unlink(res["binary_path"])
 
+
+class TestLLMAgentEfficiencyRules:
+    """Tests for LLM token compaction, structural SSA pre-gate, and workspace rule files."""
+
+    def test_compact_ir_for_llm_strips_optnone_and_boilerplate(self):
+        from agents.agent_rules import compact_ir_for_llm
+        raw_ir = """; ModuleID = 'input.c'
+; Function Attrs: noinline nounwind optnone ssp uwtable
+define i32 @add(i32 %a, i32 %b) optnone {
+entry:
+
+
+  %r = add nsw i32 %a, %b
+  ret i32 %r
+}
+"""
+        compacted = compact_ir_for_llm(raw_ir)
+        assert "optnone" not in compacted
+        assert "; ModuleID" not in compacted
+        assert "; Function Attrs:" not in compacted
+        assert "\n\n\n" not in compacted
+        assert "define i32 @add(i32 %a, i32 %b)" in compacted
+
+    def test_validate_llm_ir_output_catches_ssa_and_signature_bugs(self):
+        from agents.agent_rules import validate_llm_ir_output
+        src_ir = """
+define i32 @calc(i32 %x) {
+entry:
+  %a = add i32 %x, 1
+  ret i32 %a
+}
+"""
+        # Valid candidate
+        ok, msg = validate_llm_ir_output(src_ir, src_ir)
+        assert ok is True
+
+        # Duplicate SSA register definition
+        dup_ssa_ir = """
+define i32 @calc(i32 %x) {
+entry:
+  %a = add i32 %x, 1
+  %a = mul i32 %x, 2
+  ret i32 %a
+}
+"""
+        ok_ssa, msg_ssa = validate_llm_ir_output(src_ir, dup_ssa_ir)
+        assert ok_ssa is False
+        assert "SSA violation" in msg_ssa
+
+        # Return type mismatch
+        bad_sig_ir = """
+define i64 @calc(i32 %x) {
+entry:
+  ret i64 0
+}
+"""
+        ok_sig, msg_sig = validate_llm_ir_output(src_ir, bad_sig_ir)
+        assert ok_sig is False
+        assert "Return type mismatch" in msg_sig
+
+    def test_memory_sentinel_zero_token_fast_path(self):
+        from agents.memory_sentinel import _has_memory_or_unsafe_ops, run
+        pure_arith = """
+define i32 @square(i32 %x) {
+entry:
+  %r = mul nsw i32 %x, %x
+  ret i32 %r
+}
+"""
+        assert _has_memory_or_unsafe_ops(pure_arith) is False
+        assert run(pure_arith) == pure_arith
+
+    def test_workspace_agent_rule_files_exist_and_are_compact(self):
+        repo_root = Path(__file__).parent.parent
+        agents_md = repo_root / "AGENTS.md"
+        gemini_md = repo_root / "GEMINI.md"
+        llvm_rules = repo_root / ".agents" / "rules" / "llvm-verification-rules.md"
+        eff_rules = repo_root / ".agents" / "rules" / "llm-agent-efficiency.md"
+
+        assert agents_md.exists()
+        assert gemini_md.exists()
+        assert llvm_rules.exists()
+        assert eff_rules.exists()
+        # Enforce < 150 lines litmus test on root AGENTS.md
+        assert len(agents_md.read_text(encoding="utf-8").splitlines()) < 150
+
