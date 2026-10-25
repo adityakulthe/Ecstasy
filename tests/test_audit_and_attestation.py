@@ -1342,3 +1342,76 @@ entry:
         res_fabs = verify_ir_equivalence(src_fabs, tgt_fabs)
         assert res_fabs.verdict == "PROVED"
         assert res_fabs.proved is True
+
+    def test_void_function_and_pointer_parameter_post_state_verification(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. -O0 alloca-indirect pointer swap vs -O2 direct pointer swap -> PROVED
+        src_o0_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %a.addr = alloca ptr, align 8
+          %b.addr = alloca ptr, align 8
+          %tmp = alloca i32, align 4
+          store ptr %a, ptr %a.addr, align 8
+          store ptr %b, ptr %b.addr, align 8
+          %0 = load ptr, ptr %a.addr, align 8
+          %1 = load i32, ptr %0, align 4
+          store i32 %1, ptr %tmp, align 4
+          %2 = load ptr, ptr %b.addr, align 8
+          %3 = load i32, ptr %2, align 4
+          %4 = load ptr, ptr %a.addr, align 8
+          store i32 %3, ptr %4, align 4
+          %5 = load i32, ptr %tmp, align 4
+          %6 = load ptr, ptr %b.addr, align 8
+          store i32 %5, ptr %6, align 4
+          ret void
+        }
+        """
+        tgt_o2_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %0 = load i32, ptr %a, align 4
+          %1 = load i32, ptr %b, align 4
+          store i32 %1, ptr %a, align 4
+          store i32 %0, ptr %b, align 4
+          ret void
+        }
+        """
+        res_swap = verify_ir_equivalence(src_o0_swap, tgt_o2_swap)
+        assert res_swap.verdict == "PROVED"
+        assert res_swap.proved is True
+
+        # 2. Direct swap vs branchless XOR swap -> PROVED
+        tgt_xor_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %va = load i32, ptr %a, align 4
+          %vb = load i32, ptr %b, align 4
+          %x1 = xor i32 %va, %vb
+          %new_b = xor i32 %x1, %vb
+          %new_a = xor i32 %x1, %new_b
+          store i32 %new_a, ptr %a, align 4
+          store i32 %new_b, ptr %b, align 4
+          ret void
+        }
+        """
+        res_xor = verify_ir_equivalence(tgt_o2_swap, tgt_xor_swap)
+        assert res_xor.verdict == "PROVED"
+        assert res_xor.proved is True
+
+        # 3. Buggy swap that overwrites *b with *a instead of swapping -> FAILED
+        tgt_buggy_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %0 = load i32, ptr %a, align 4
+          %1 = load i32, ptr %b, align 4
+          store i32 %1, ptr %a, align 4
+          store i32 %1, ptr %b, align 4
+          ret void
+        }
+        """
+        res_bug = verify_ir_equivalence(src_o0_swap, tgt_buggy_swap)
+        assert res_bug.verdict == "FAILED"
+        assert res_bug.proved is False
+        assert res_bug.counterexample is not None

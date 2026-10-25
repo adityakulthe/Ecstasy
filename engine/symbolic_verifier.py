@@ -246,6 +246,7 @@ class SymbolicIRVerifier:
         val_ty = tokens[1]
         val_str = tokens[2]
         val_width = self._parse_width(val_ty)
+        val_fp_sort = self._parse_fp_sort(val_ty)
 
         # Target pointer register is usually tokens[4]
         ptr_reg = tokens[4] if tokens[4].startswith("%") else None
@@ -258,14 +259,22 @@ class SymbolicIRVerifier:
         if not ptr_reg:
             return
 
+        ptr_params: Dict[str, int] = memory_store.get("__ptr_params__", {})
+        if (val_ty == "ptr" or val_ty.endswith("*")) and val_str in ptr_params:
+            ptr_params[f"__slot__{ptr_reg}"] = ptr_params[val_str]
+
         # Resolve constant-offset getelementptr alias if present
         slot_key = ptr_reg
         if ptr_reg in env and isinstance(env[ptr_reg], str) and env[ptr_reg].startswith("__gep__"):
             slot_key = env[ptr_reg]
+        elif ptr_reg in ptr_params and val_ty != "ptr" and not val_ty.endswith("*"):
+            slot_key = f"__param_deref_{ptr_params[ptr_reg]}__"
 
         new_val = None
         if val_str.startswith("%") and val_str in env:
             new_val = env[val_str]
+        elif val_fp_sort is not None:
+            new_val = self._parse_fp_val(val_str, val_fp_sort)
         elif val_str.lstrip("-").isdigit():
             new_val = z3.BitVecVal(int(val_str), val_width)
 
@@ -288,10 +297,11 @@ class SymbolicIRVerifier:
             and env[ptr_reg][0] == "__z3arr__"
         ):
             _, arr_Key, idx_bv64 = env[ptr_reg]
+            val_sort = new_val.sort() if isinstance(new_val, z3.FPRef) else z3.BitVecSort(val_width)
             prev_arr = memory_store.get(arr_Key)
             if not isinstance(prev_arr, z3.ArrayRef):
                 prev_arr = z3.Array(
-                    f"arr_{arr_Key}", z3.BitVecSort(64), z3.BitVecSort(val_width)
+                    f"arr_{arr_Key}", z3.BitVecSort(64), val_sort
                 )
             updated_arr = z3.Store(prev_arr, idx_bv64, new_val)
             if (
@@ -323,12 +333,18 @@ class SymbolicIRVerifier:
             cond_bool = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
             if current_label == false_lbl:
                 memory_store[slot_key] = z3.If(cond_bool, prev_val, new_val)
+                if slot_key.startswith("__param_deref_"):
+                    memory_store[f"__post_{slot_key.strip('_')}__"] = memory_store[slot_key]
                 return
             elif current_label == true_lbl:
                 memory_store[slot_key] = z3.If(cond_bool, new_val, prev_val)
+                if slot_key.startswith("__param_deref_"):
+                    memory_store[f"__post_{slot_key.strip('_')}__"] = memory_store[slot_key]
                 return
 
         memory_store[slot_key] = new_val
+        if slot_key.startswith("__param_deref_"):
+            memory_store[f"__post_{slot_key.strip('_')}__"] = new_val
 
     def evaluate_function(
         self,
@@ -346,8 +362,9 @@ class SymbolicIRVerifier:
             raise RuntimeError("Z3 SMT solver is not installed")
 
         params: Dict[str, Any] = {}
+        ptr_params: Dict[str, int] = {}
         if raw_params:
-            for p in raw_params.split(","):
+            for p_idx, p in enumerate(raw_params.split(",")):
                 p = p.strip()
                 if not p:
                     continue
@@ -364,6 +381,8 @@ class SymbolicIRVerifier:
                 if len(parts) >= 2:
                     ty = parts[0]
                     name = parts[-1]
+                    if ty == "ptr" or any(tok.endswith("*") for tok in parts[:-1]):
+                        ptr_params[name] = p_idx
                     fp_sort = self._parse_fp_sort(ty)
                     if fp_sort is not None:
                         params[name] = z3.FP(f"arg_{name.lstrip('%')}", fp_sort)
@@ -372,7 +391,7 @@ class SymbolicIRVerifier:
                         params[name] = z3.BitVec(f"arg_{name.lstrip('%')}", width)
 
         env: Dict[str, Any] = dict(params)
-        memory_store: Dict[str, Any] = {}
+        memory_store: Dict[str, Any] = {"__ptr_params__": ptr_params}
         local_allocas: set[str] = set()
         last_cond = None
         last_br_labels: Optional[Tuple[str, str]] = None
@@ -584,6 +603,13 @@ class SymbolicIRVerifier:
             # Return instruction
             if line.startswith("ret "):
                 parts = line.split()
+                if len(parts) >= 2 and parts[1] == "void":
+                    post_dict = {
+                        k: v for k, v in memory_store.items() if k.startswith("__post_param_deref_")
+                    }
+                    if post_dict:
+                        ret_expr = ("__void_post__", post_dict)
+                    continue
                 val_name = parts[-1]
                 if val_name in env:
                     ret_expr = env[val_name]
@@ -1093,6 +1119,11 @@ class SymbolicIRVerifier:
                             ptr_reg = t
                             break
                     target_width = self._parse_width(clean_tokens[1]) if len(clean_tokens) > 1 else 32
+                    load_ty = clean_tokens[1] if len(clean_tokens) > 1 else "i32"
+                    ptr_params = memory_store.get("__ptr_params__", {})
+                    if (load_ty == "ptr" or load_ty.endswith("*")) and ptr_reg and f"__slot__{ptr_reg}" in ptr_params:
+                        ptr_params[var] = ptr_params[f"__slot__{ptr_reg}"]
+
                     if (
                         ptr_reg
                         and ptr_reg in env
@@ -1109,6 +1140,22 @@ class SymbolicIRVerifier:
                             memory_store[arr_key] = arr_ref
                         env[var] = z3.Select(arr_ref, idx_bv64)
                         continue
+
+                    if ptr_reg and ptr_reg in ptr_params and load_ty != "ptr" and not load_ty.endswith("*"):
+                        p_idx = ptr_params[ptr_reg]
+                        slot_key = f"__param_deref_{p_idx}__"
+                        if slot_key in memory_store and memory_store[slot_key] is not None:
+                            env[var] = memory_store[slot_key]
+                        else:
+                            fp_sort = self._parse_fp_sort(load_ty)
+                            if fp_sort is not None:
+                                init_val = z3.FP(f"deref_param_{p_idx}", fp_sort)
+                            else:
+                                init_val = z3.BitVec(f"deref_param_{p_idx}", target_width)
+                            memory_store[slot_key] = init_val
+                            env[var] = init_val
+                        continue
+
                     slot_key = ptr_reg
                     if ptr_reg and ptr_reg in env and isinstance(env[ptr_reg], str) and env[ptr_reg].startswith("__gep__"):
                         slot_key = env[ptr_reg]
@@ -1614,7 +1661,31 @@ class SymbolicIRVerifier:
 
             # 1. Check return value equivalence
             solver.push()
-            if isinstance(r_orig, list) and isinstance(r_opt, list) and len(r_orig) == len(r_opt):
+            is_void_post = (
+                isinstance(r_orig, tuple)
+                and len(r_orig) == 2
+                and r_orig[0] == "__void_post__"
+                and isinstance(r_opt, tuple)
+                and len(r_opt) == 2
+                and r_opt[0] == "__void_post__"
+            )
+            if is_void_post:
+                orig_posts = r_orig[1]
+                opt_posts = r_opt[1]
+                all_post_keys = sorted(set(orig_posts.keys()) | set(opt_posts.keys()))
+                mismatch_terms = []
+                for k in all_post_keys:
+                    vo = orig_posts.get(k)
+                    vt = opt_posts.get(k)
+                    if vo is None or vt is None:
+                        mismatch_terms.append(z3.BoolVal(True))
+                    else:
+                        mismatch_terms.append(vo != vt)
+                if mismatch_terms:
+                    solver.add(z3.Or(*mismatch_terms))
+                else:
+                    solver.add(z3.BoolVal(False))
+            elif isinstance(r_orig, list) and isinstance(r_opt, list) and len(r_orig) == len(r_opt):
                 solver.add(z3.Or(*[a != b for a, b in zip(r_orig, r_opt)]))
             elif isinstance(r_orig, z3.FPRef) and isinstance(r_opt, z3.FPRef) and has_fp_nsz:
                 solver.add(
@@ -1644,7 +1715,21 @@ class SymbolicIRVerifier:
                         w_lbl = f"i{bv.size()}" if hasattr(bv, "size") else "i32"
                         input_vals[f"{w_lbl} {pname}"] = val.as_long() if val is not None else 0
 
-                if isinstance(r_orig, list) and isinstance(r_opt, list):
+                if is_void_post:
+                    for decl in m.decls():
+                        dname = decl.name()
+                        if dname.startswith("deref_param_"):
+                            pos_str = dname.replace("deref_param_", "")
+                            ev = m[decl]
+                            if hasattr(ev, "as_long"):
+                                input_vals[f"*param_{pos_str}"] = ev.as_long()
+                            else:
+                                input_vals[f"*param_{pos_str}"] = str(ev)
+
+                if is_void_post:
+                    src_out = {k: str(m.eval(v)) for k, v in r_orig[1].items()}
+                    tgt_out = {k: str(m.eval(v)) for k, v in r_opt[1].items()}
+                elif isinstance(r_orig, list) and isinstance(r_opt, list):
                     src_out = [str(m.eval(ln)) for ln in r_orig]
                     tgt_out = [str(m.eval(ln)) for ln in r_opt]
                 else:

@@ -1183,6 +1183,10 @@ def render_smt_and_certificate_inspector():
             "define float @fp_add_zero(float %x) {\nentry:\n  %r = fadd float %x, 0.0\n  ret float %r\n}",
             "define float @fp_add_zero(float %x) {\nentry:\n  ret float %x\n}"
         ),
+        "Void Pointer Swap (-O0 alloca Temp Swap vs -O2 Direct Swap)": (
+            "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %a.addr = alloca ptr, align 8\n  %b.addr = alloca ptr, align 8\n  %tmp = alloca i32, align 4\n  store ptr %a, ptr %a.addr, align 8\n  store ptr %b, ptr %b.addr, align 8\n  %0 = load ptr, ptr %a.addr, align 8\n  %1 = load i32, ptr %0, align 4\n  store i32 %1, ptr %tmp, align 4\n  %2 = load ptr, ptr %b.addr, align 8\n  %3 = load i32, ptr %2, align 4\n  %4 = load ptr, ptr %a.addr, align 8\n  store i32 %3, ptr %4, align 4\n  %5 = load i32, ptr %tmp, align 4\n  %6 = load ptr, ptr %b.addr, align 8\n  store i32 %5, ptr %6, align 4\n  ret void\n}",
+            "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %0 = load i32, ptr %a, align 4\n  %1 = load i32, ptr %b, align 4\n  store i32 %1, ptr %a, align 4\n  store i32 %0, ptr %b, align 4\n  ret void\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"
