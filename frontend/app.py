@@ -1385,11 +1385,15 @@ def render_cyber_defense_studio():
 
     target_ir = st.text_area("LLVM IR Target under Analysis:", value=default_ir, height=200, key=f"cyber_{selected_cyber_preset}")
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        run_exploit_audit = st.button("⚡ Run SMT Exploit & Vulnerability Prover", use_container_width=True, type="primary")
+        run_exploit_audit = st.button("⚡ SMT Exploit Prover", use_container_width=True, type="primary")
     with c2:
-        run_crypto_audit = st.button("⏱️ Verify Cryptographic Constant-Time", use_container_width=True)
+        run_crypto_audit = st.button("⏱️ Verify Constant-Time", use_container_width=True)
+    with c3:
+        run_hardening = st.button("🛡️ SMT-Verified Hardening", use_container_width=True)
+    with c4:
+        run_cbom_export = st.button("📜 Export CycloneDX CBOM", use_container_width=True)
 
     if run_exploit_audit:
         with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
@@ -1453,6 +1457,46 @@ def render_cyber_defense_studio():
                         st.markdown(f"**Secret Sources:** `{', '.join(v.secret_sources)}`")
                         st.markdown(f"**Description:** {v.description}")
                         st.info(f"💡 **Remediation:** {v.remediation}")
+
+    if run_hardening:
+        with st.spinner("Injecting branchless mitigations and verifying Zero-Divergence Invariant with Z3..."):
+            from engine.security_hardening import harden_llvm_ir
+            h_rep = harden_llvm_ir(target_ir)
+
+            st.divider()
+            st.markdown(f"### 🛡️ SMT-Verified Hardening Results: {len(h_rep.patches)} Patch(es) Applied")
+            if h_rep.zero_divergence_proved:
+                st.success("✅ **ZERO-DIVERGENCE INVARIANT FORMALLY PROVED BY Z3 SMT**")
+                st.markdown(h_rep.verification_output)
+            else:
+                st.info(f"ℹ️ Status: {h_rep.verification_output}")
+
+            for p in h_rep.patches:
+                with st.expander(f"🔧 Injected Mitigation: {p.cwe_id} in @{p.function_name}", expanded=True):
+                    st.markdown(f"**Description:** {p.description}")
+                    st.markdown("**Original:**")
+                    st.code(p.original_instruction, language="llvm")
+                    st.markdown("**Hardened:**")
+                    st.code(p.hardened_instruction, language="llvm")
+
+            st.markdown("#### Hardened LLVM IR Output")
+            st.code(h_rep.hardened_ir, language="llvm")
+
+    if run_cbom_export:
+        with st.spinner("Generating CycloneDX v1.6 Cryptographic Bill of Materials (CBOM)..."):
+            from server.mcp_server import mcp_export_cbom
+            cbom_data = mcp_export_cbom(llvm_ir=target_ir)
+
+            st.divider()
+            st.markdown("### 📜 CycloneDX v1.6 Cryptographic Bill of Materials (CBOM)")
+            st.json(cbom_data)
+            st.download_button(
+                label="📥 Download CycloneDX v1.6 CBOM (cyclonedx-cbom.json)",
+                data=json.dumps(cbom_data, indent=2),
+                file_name="cyclonedx-cbom.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 
 def main():

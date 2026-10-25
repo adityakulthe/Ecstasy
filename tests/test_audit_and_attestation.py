@@ -910,13 +910,15 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 8
+        assert len(manifest) == 10
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
         assert "mcp_audit_memory_safety" in names
         assert "mcp_prove_vulnerability" in names
         assert "mcp_verify_constant_time" in names
+        assert "mcp_harden_security" in names
+        assert "mcp_export_cbom" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)
@@ -1634,5 +1636,86 @@ entry:
         ct_res = mcp_verify_constant_time(sample_ir)
         assert "is_constant_time" in ct_res
         assert ct_res["is_constant_time"] is True
+
+    def test_security_hardener_divide_by_zero_mitigation(self):
+        from engine.security_hardening import harden_llvm_ir
+        from engine.smt_vulnerability_prover import audit_ir_security
+
+        vuln_div_ir = """
+        define i32 @unprotected_div(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        # Hardening pass
+        h_rep = harden_llvm_ir(vuln_div_ir)
+        assert len(h_rep.patches) >= 1
+        assert h_rep.patches[0].cwe_id == "CWE-369"
+        assert "_div_is_zero" in h_rep.hardened_ir
+        assert "select" in h_rep.hardened_ir
+
+        # Hardened IR should no longer have an unconstrained divide-by-zero vulnerability
+        dossier = audit_ir_security(h_rep.hardened_ir)
+        assert len(dossier.vulnerabilities_found) == 0
+
+    def test_security_hardener_buffer_bounds_mitigation(self):
+        from engine.security_hardening import harden_llvm_ir
+
+        vuln_buf_ir = """
+        define i32 @unbounded_lookup(i32 %idx) {
+        entry:
+          %buf = alloca [10 x i32], align 4
+          %ptr = getelementptr inbounds [10 x i32], ptr %buf, i64 0, i32 %idx
+          %val = load i32, ptr %ptr, align 4
+          ret i32 %val
+        }
+        """
+        h_rep = harden_llvm_ir(vuln_buf_ir)
+        assert len(h_rep.patches) >= 1
+        assert h_rep.patches[0].cwe_id == "CWE-125/787"
+        assert "_clamped_idx" in h_rep.hardened_ir
+        assert "select" in h_rep.hardened_ir
+
+    def test_cyclonedx_cbom_generation(self):
+        from agents.safety_vault import SafetyVault
+
+        vault = SafetyVault()
+        cert = vault.generate_certificate(
+            project_name="CryptoCore",
+            source_code="int crypto_func() { return 1; }",
+            ir_code="define i32 @crypto_func() {\nentry:\n  ret i32 1\n}",
+            binary_path=None,
+            z3_verdict="PROVED",
+        )
+        cbom = vault.export_cbom(certificate=cert)
+        assert cbom["bomFormat"] == "CycloneDX"
+        assert cbom["specVersion"] == "1.6"
+        assert "metadata" in cbom
+        assert "cryptoProperties" in cbom
+        attestation = cbom["cryptoProperties"]["attestation"]
+        assert "NIST SP 800-218" in attestation["standard"]
+        assert attestation["z3_formal_verdict"] == "PROVED"
+        assert len(attestation["signature"]) > 0
+
+    def test_mcp_harden_security_and_cbom_tools(self):
+        from server.mcp_server import mcp_harden_security, mcp_export_cbom
+
+        vuln_ir = """
+        define i32 @div(i32 %a, i32 %b) {
+        entry:
+          %r = sdiv i32 %a, %b
+          ret i32 %r
+        }
+        """
+        hardened = mcp_harden_security(vuln_ir)
+        assert "patches_count" in hardened
+        assert hardened["patches_count"] >= 1
+        assert "hardened_ir" in hardened
+
+        cbom = mcp_export_cbom(llvm_ir=vuln_ir, project_name="TestMCPProject")
+        assert cbom["bomFormat"] == "CycloneDX"
+        assert cbom["specVersion"] == "1.6"
+
 
 
