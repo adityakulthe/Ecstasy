@@ -910,7 +910,7 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 11
+        assert len(manifest) == 13
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
@@ -920,6 +920,8 @@ entry:
         assert "mcp_harden_security" in names
         assert "mcp_export_cbom" in names
         assert "mcp_verify_exploit_poc" in names
+        assert "mcp_synthesize_constant_time" in names
+        assert "mcp_analyze_attack_surface" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)
@@ -1803,6 +1805,90 @@ entry:
         assert poc_res["unhardened_crashed"] is True
         assert poc_res["hardened_safe"] is True
         assert poc_res["exploit_verified"] is True
+
+    def test_crypto_synthesizer_constant_time_transformation(self):
+        from engine.crypto_synthesizer import synthesize_constant_time
+
+        timing_leaking_ir = """
+        define i32 @compare_mac(i32 %key, i32 %input) {
+        entry:
+          %match = icmp eq i32 %key, %input
+          br i1 %match, label %then, label %else
+        then:
+          ret i32 1
+        else:
+          ret i32 0
+        }
+        """
+        report = synthesize_constant_time(timing_leaking_ir)
+        assert len(report.patches) == 1
+        assert report.patches[0].leak_type == "BRANCH_TIMING_LEAK"
+        assert report.zero_divergence_proved is True
+        assert report.constant_time_proved is True
+        assert "select" in report.constant_time_ir
+        assert "br " not in report.constant_time_ir
+
+    def test_mitre_attack_surface_analysis_and_navigator_layer(self):
+        from engine.smt_vulnerability_prover import audit_ir_security
+        from engine.crypto_timing_verifier import verify_crypto_constant_time
+        from engine.attack_surface import analyze_attack_surface
+
+        vuln_ir = """
+        define i32 @crypto_and_div(i32 %a, i32 %b, i32 %key, i32 %input) {
+        entry:
+          %res = sdiv i32 %a, %b
+          %match = icmp eq i32 %key, %input
+          br i1 %match, label %then, label %else
+        then:
+          ret i32 %res
+        else:
+          ret i32 0
+        }
+        """
+        dossier = audit_ir_security(vuln_ir)
+        ct_rep = verify_crypto_constant_time(vuln_ir)
+        att_rep = analyze_attack_surface(dossier, ct_rep)
+
+        assert att_rep.attack_surface_score > 0.0
+        assert att_rep.vulnerabilities_count >= 2
+        assert att_rep.techniques_count >= 2
+        assert att_rep.mitigation_coverage_pct == 100.0
+        assert att_rep.nist_ssdf_compliant is True
+
+        nav = att_rep.navigator_layer
+        assert nav["versions"]["navigator"] == "4.3"
+        assert nav["domain"] == "enterprise-attack"
+        assert len(nav["techniques"]) >= 2
+        tids = {t["techniqueID"] for t in nav["techniques"]}
+        assert "T1499" in tids  # CWE-369 DoS
+        assert "T1005" in tids  # CWE-208 Timing side-channel
+
+    def test_mcp_synthesize_constant_time_and_attack_surface_tools(self):
+        from server.mcp_server import mcp_synthesize_constant_time, mcp_analyze_attack_surface
+
+        leaking_ir = """
+        define i32 @verify_token(i32 %secret_key, i32 %candidate) {
+        entry:
+          %cmp = icmp eq i32 %secret_key, %candidate
+          br i1 %cmp, label %valid, label %invalid
+        valid:
+          ret i32 100
+        invalid:
+          ret i32 -1
+        }
+        """
+        synth_res = mcp_synthesize_constant_time(leaking_ir)
+        assert synth_res["patches_count"] == 1
+        assert synth_res["zero_divergence_proved"] is True
+        assert synth_res["constant_time_proved"] is True
+        assert "select" in synth_res["constant_time_ir"]
+
+        attack_res = mcp_analyze_attack_surface(leaking_ir)
+        assert attack_res["attack_surface_score"] > 0
+        assert attack_res["techniques_count"] >= 1
+        assert "navigator_layer" in attack_res
+        assert attack_res["navigator_layer"]["domain"] == "enterprise-attack"
+
 
 
 

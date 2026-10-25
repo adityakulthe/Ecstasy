@@ -1385,17 +1385,23 @@ def render_cyber_defense_studio():
 
     target_ir = st.text_area("LLVM IR Target under Analysis:", value=default_ir, height=200, key=f"cyber_{selected_cyber_preset}")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
+    r1_c1, r1_c2, r1_c3 = st.columns(3)
+    with r1_c1:
         run_exploit_audit = st.button("⚡ SMT Exploit Prover", use_container_width=True, type="primary")
-    with c2:
+    with r1_c2:
         run_crypto_audit = st.button("⏱️ Verify Constant-Time", use_container_width=True)
-    with c3:
-        run_hardening = st.button("🛡️ SMT Hardening", use_container_width=True)
-    with c4:
-        run_cbom_export = st.button("📜 Export CBOM", use_container_width=True)
-    with c5:
-        run_fuzzer = st.button("💥 Exploit Sandbox", use_container_width=True)
+    with r1_c3:
+        run_hardening = st.button("🛡️ SMT-Verified Hardening", use_container_width=True)
+
+    r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
+    with r2_c1:
+        run_synth_ct = st.button("✨ Auto Constant-Time Synthesizer", use_container_width=True)
+    with r2_c2:
+        run_attack_surface = st.button("🗺️ MITRE ATT&CK Matrix", use_container_width=True)
+    with r2_c3:
+        run_fuzzer = st.button("💥 Exploit Sandbox Fuzzer", use_container_width=True)
+    with r2_c4:
+        run_cbom_export = st.button("📜 Export CycloneDX CBOM", use_container_width=True)
 
     if run_exploit_audit:
         with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
@@ -1530,6 +1536,68 @@ def render_cyber_defense_studio():
                         st.code(rep.poc_c_source, language="c")
                         st.markdown("**Differential Execution Log:**")
                         st.code(rep.execution_log)
+
+    if run_synth_ct:
+        with st.spinner("Synthesizing branchless straight-line cryptographic IR & proving equivalence with Z3..."):
+            from engine.crypto_synthesizer import synthesize_constant_time
+            ct_report = synthesize_constant_time(target_ir)
+
+            st.divider()
+            st.markdown(f"### ✨ SMT-Verified Constant-Time Synthesis: {len(ct_report.patches)} Transformation(s)")
+            if ct_report.zero_divergence_proved and ct_report.constant_time_proved:
+                st.success("✅ **MATHEMATICALLY PROVED: 100% BIT-EQUIVALENT & ZERO SIDE-CHANNEL TIMING LEAKS**")
+            elif ct_report.constant_time_proved:
+                st.success("✅ **CONSTANT-TIME IMMUNITY PROVED**")
+            st.markdown(f"**Verification Verdict:** {ct_report.verification_output}")
+
+            for p in ct_report.patches:
+                with st.expander(f"✨ Synthesized Branchless Primitive in @{p.function_name}", expanded=True):
+                    st.markdown(f"**Description:** {p.description}")
+                    st.markdown("**Original Timing-Leaking Branch:**")
+                    st.code(p.original_branch, language="llvm")
+                    st.markdown("**Synthesized Constant-Time Multiplexer:**")
+                    st.code(p.synthesized_instruction, language="llvm")
+
+            st.markdown("#### Constant-Time De-Tainted LLVM IR")
+            st.code(ct_report.constant_time_ir, language="llvm")
+
+    if run_attack_surface:
+        with st.spinner("Mapping cyber attack surface to MITRE ATT&CK Enterprise Matrix v15..."):
+            from engine.smt_vulnerability_prover import audit_ir_security
+            from engine.crypto_timing_verifier import verify_crypto_constant_time
+            from engine.attack_surface import analyze_attack_surface
+
+            dossier = audit_ir_security(target_ir)
+            ct_rep = verify_crypto_constant_time(target_ir)
+            att_rep = analyze_attack_surface(dossier, ct_rep)
+
+            st.divider()
+            st.markdown("### 🗺️ MITRE ATT&CK Matrix & Cyber Attack Surface Analysis")
+            col_a1, col_a2, col_a3, col_a4 = st.columns(4)
+            with col_a1:
+                st.metric("Attack Surface Score", f"{att_rep.attack_surface_score} / 100")
+            with col_a2:
+                st.metric("ATT&CK Techniques", str(att_rep.techniques_count))
+            with col_a3:
+                st.metric("Hardening Coverage", f"{att_rep.mitigation_coverage_pct}%")
+            with col_a4:
+                status_badge = "🟢 COMPLIANT" if att_rep.nist_ssdf_compliant else "🔴 NON-COMPLIANT"
+                st.metric("NIST SP 800-218 (SSDF)", status_badge)
+
+            if att_rep.techniques:
+                st.markdown("#### 🎯 Identified Threat Techniques & CWE Mappings")
+                for t in att_rep.techniques:
+                    with st.expander(f"🚨 [{t.technique_id}] {t.technique_name} — {t.cwe_id} in @{t.function_name}", expanded=True):
+                        st.markdown(f"**Tactic:** `{t.tactic}` | **Severity:** `{t.severity}` (CVSS {t.cvss_score})")
+                        st.markdown(f"**Analysis:** {t.comment}")
+
+            st.download_button(
+                label="📥 Download MITRE ATT&CK Navigator v4.3 Layer (navigator_layer.json)",
+                data=json.dumps(att_rep.navigator_layer, indent=2),
+                file_name="navigator_layer.json",
+                mime="application/json",
+                use_container_width=True,
+            )
 
 
 def main():

@@ -771,17 +771,32 @@ class SymbolicIRVerifier:
                         ret_expr = ("__void_post__", post_dict)
                     continue
                 val_name = parts[-1]
+                current_val = None
                 if val_name in env:
-                    ret_expr = env[val_name]
+                    current_val = env[val_name]
                 elif len(parts) > 2 and self._parse_fp_sort(parts[1]) is not None:
-                    ret_expr = self._parse_fp_val(val_name, self._parse_fp_sort(parts[1]))
+                    current_val = self._parse_fp_val(val_name, self._parse_fp_sort(parts[1]))
                 elif val_name.lstrip("-").isdigit():
                     ret_width = self._parse_width(parts[1]) if len(parts) > 2 else 32
-                    ret_expr = z3.BitVecVal(int(val_name), ret_width)
+                    current_val = z3.BitVecVal(int(val_name), ret_width)
                 elif val_name == "true":
-                    ret_expr = z3.BitVecVal(1, 1)
+                    current_val = z3.BitVecVal(1, 1)
                 elif val_name == "false":
-                    ret_expr = z3.BitVecVal(0, 1)
+                    current_val = z3.BitVecVal(0, 1)
+
+                if current_val is not None:
+                    if ret_expr is not None and last_cond is not None and last_br_labels is not None:
+                        cond_b = (last_cond == 1) if isinstance(last_cond, z3.BitVecRef) else last_cond
+                        true_lbl = last_br_labels[0].lstrip("%")
+                        false_lbl = last_br_labels[1].lstrip("%")
+                        if current_label == false_lbl:
+                            ret_expr = z3.If(cond_b, ret_expr, current_val)
+                        elif current_label == true_lbl:
+                            ret_expr = z3.If(cond_b, current_val, ret_expr)
+                        else:
+                            ret_expr = current_val
+                    else:
+                        ret_expr = current_val
                 continue
 
             # Standalone call instruction without return value (e.g. call void @callee(...))

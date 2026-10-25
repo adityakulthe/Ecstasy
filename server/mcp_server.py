@@ -799,6 +799,14 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_verify_exploit_poc",
             "description": "Differentially verify synthesized SMT exploit PoC harness against unhardened vs hardened binaries in sandbox",
         },
+        {
+            "name": "mcp_synthesize_constant_time",
+            "description": "Synthesize branchless constant-time cryptographic primitives (CWE-208 mitigation) with SMT Zero-Divergence proof",
+        },
+        {
+            "name": "mcp_analyze_attack_surface",
+            "description": "Analyze full-spectrum cyber attack surface and export MITRE ATT&CK Matrix Navigator v4.3 layer",
+        },
     ]
 
 
@@ -992,6 +1000,36 @@ def mcp_verify_exploit_poc(
     fuzzer = DifferentialExploitFuzzer(timeout_sec=timeout_sec)
     report = fuzzer.verify_exploit(unhardened_ir, hardened_ir, finding)
     return report.to_dict()
+
+
+@_mcp_tool
+def mcp_synthesize_constant_time(
+    llvm_ir: str,
+    secret_params: Optional[List[str]] = None,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Synthesize branchless constant-time cryptographic primitives (CWE-208 mitigation) with SMT Zero-Divergence proof."""
+    from engine.crypto_synthesizer import synthesize_constant_time
+
+    rep = synthesize_constant_time(llvm_ir, secret_params=secret_params, timeout_sec=timeout_sec)
+    return rep.to_dict()
+
+
+@_mcp_tool
+def mcp_analyze_attack_surface(
+    llvm_ir: str,
+    secret_params: Optional[List[str]] = None,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Analyze full-spectrum cyber attack surface and export MITRE ATT&CK Matrix Navigator v4.3 layer."""
+    from engine.smt_vulnerability_prover import audit_ir_security
+    from engine.crypto_timing_verifier import verify_crypto_constant_time
+    from engine.attack_surface import analyze_attack_surface
+
+    dossier = audit_ir_security(llvm_ir, timeout_sec=timeout_sec)
+    ct_rep = verify_crypto_constant_time(llvm_ir, secret_params=secret_params, timeout_sec=timeout_sec)
+    att_rep = analyze_attack_surface(dossier, ct_rep)
+    return att_rep.to_dict()
 
 
 if __name__ == "__main__":
