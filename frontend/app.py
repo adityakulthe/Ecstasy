@@ -1187,6 +1187,10 @@ def render_smt_and_certificate_inspector():
             "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %a.addr = alloca ptr, align 8\n  %b.addr = alloca ptr, align 8\n  %tmp = alloca i32, align 4\n  store ptr %a, ptr %a.addr, align 8\n  store ptr %b, ptr %b.addr, align 8\n  %0 = load ptr, ptr %a.addr, align 8\n  %1 = load i32, ptr %0, align 4\n  store i32 %1, ptr %tmp, align 4\n  %2 = load ptr, ptr %b.addr, align 8\n  %3 = load i32, ptr %2, align 4\n  %4 = load ptr, ptr %a.addr, align 8\n  store i32 %3, ptr %4, align 4\n  %5 = load i32, ptr %tmp, align 4\n  %6 = load ptr, ptr %b.addr, align 8\n  store i32 %5, ptr %6, align 4\n  ret void\n}",
             "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %0 = load i32, ptr %a, align 4\n  %1 = load i32, ptr %b, align 4\n  store i32 %1, ptr %a, align 4\n  store i32 %0, ptr %b, align 4\n  ret void\n}"
         ),
+        "Interprocedural Callee Pointer Mutation (call void @swap_i32 Stack Inlining)": (
+            "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %0 = load i32, ptr %a, align 4\n  %1 = load i32, ptr %b, align 4\n  store i32 %1, ptr %a, align 4\n  store i32 %0, ptr %b, align 4\n  ret void\n}\n\ndefine i32 @test_caller(i32 %a, i32 %b) {\nentry:\n  %x = alloca i32, align 4\n  %y = alloca i32, align 4\n  store i32 %a, ptr %x, align 4\n  store i32 %b, ptr %y, align 4\n  call void @swap_i32(ptr %x, ptr %y)\n  %rx = load i32, ptr %x, align 4\n  %ry = load i32, ptr %y, align 4\n  %diff = sub i32 %rx, %ry\n  ret i32 %diff\n}",
+            "define void @swap_i32(ptr %a, ptr %b) {\nentry:\n  %0 = load i32, ptr %a, align 4\n  %1 = load i32, ptr %b, align 4\n  store i32 %1, ptr %a, align 4\n  store i32 %0, ptr %b, align 4\n  ret void\n}\n\ndefine i32 @test_caller(i32 %a, i32 %b) {\nentry:\n  %diff = sub i32 %b, %a\n  ret i32 %diff\n}"
+        ),
         "Arithmetic Mutation (add vs sub Bug)": (
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = add i32 %a, %b\n  ret i32 %res\n}",
             "define i32 @calc(i32 %a, i32 %b) {\n  %res = sub i32 %a, %b\n  ret i32 %res\n}"

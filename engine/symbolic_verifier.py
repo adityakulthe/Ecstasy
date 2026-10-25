@@ -346,6 +346,166 @@ class SymbolicIRVerifier:
         if slot_key.startswith("__param_deref_"):
             memory_store[f"__post_{slot_key.strip('_')}__"] = new_val
 
+    def _split_args(self, arg_str: str) -> List[str]:
+        args = []
+        current = []
+        angle_depth = 0
+        bracket_depth = 0
+        for char in arg_str:
+            if char == '<':
+                angle_depth += 1
+            elif char == '>':
+                angle_depth -= 1
+            elif char == '[':
+                bracket_depth += 1
+            elif char == ']':
+                bracket_depth -= 1
+            elif char == ',' and angle_depth == 0 and bracket_depth == 0:
+                item = "".join(current).strip()
+                if item:
+                    args.append(item)
+                current = []
+                continue
+            current.append(char)
+        last = "".join(current).strip()
+        if last:
+            args.append(last)
+        return args
+
+    def _resolve_ptr_slot(
+        self,
+        ptr_token: str,
+        env: Dict[str, Any],
+        memory_store: Dict[str, Any],
+    ) -> str:
+        ptr_params = memory_store.get("__ptr_params__", {})
+        if ptr_token in env and isinstance(env[ptr_token], str):
+            ptr_token = env[ptr_token]
+        if ptr_token.startswith("__gep__"):
+            return ptr_token
+        if ptr_token in ptr_params:
+            return f"__param_deref_{ptr_params[ptr_token]}__"
+        if f"__slot__{ptr_token}" in ptr_params:
+            return f"__param_deref_{ptr_params[f'__slot__{ptr_token}']}__"
+        return ptr_token
+
+    def _inline_callee(
+        self,
+        call_expr: str,
+        ret_var: Optional[str],
+        env: Dict[str, Any],
+        memory_store: Dict[str, Any],
+        overflow_checks: List[Any],
+        module_funcs: Optional[Dict[str, Tuple[str, str, str]]],
+        call_depth: int,
+    ) -> bool:
+        if not module_funcs or call_depth >= 4:
+            return False
+        m_ucall = re.search(r"@([\w.]+)\s*\((.*?)\)", call_expr)
+        if not m_ucall or m_ucall.group(1) not in module_funcs:
+            return False
+        callee_name = m_ucall.group(1)
+        c_ret_ty, c_params_raw, c_body = module_funcs[callee_name]
+        arg_items = self._split_args(m_ucall.group(2))
+
+        c_params, c_ret, c_ov = self.evaluate_function(
+            c_ret_ty,
+            c_params_raw,
+            c_body,
+            module_funcs=module_funcs,
+            call_depth=call_depth + 1,
+        )
+        if c_ret is None:
+            return False
+        overflow_checks.extend(c_ov)
+
+        subst_pairs = []
+        formal_param_items = [p.strip() for p in c_params_raw.split(",") if p.strip()] if c_params_raw else []
+
+        for p_idx, arg_item in enumerate(arg_items):
+            arg_parts = arg_item.split()
+            if not arg_parts:
+                continue
+            arg_ty = arg_parts[0]
+            arg_val_str = arg_parts[-1]
+            is_ptr = (arg_ty == "ptr" or any(t.endswith("*") for t in arg_parts[:-1]))
+
+            if is_ptr:
+                caller_slot = self._resolve_ptr_slot(arg_val_str, env, memory_store)
+                cur_val = memory_store.get(caller_slot)
+                if cur_val is None:
+                    if caller_slot.startswith("__param_deref_"):
+                        p_pos = int(caller_slot.replace("__param_deref_", "").replace("__", ""))
+                        cur_val = z3.BitVec(f"deref_param_{p_pos}", 32)
+                    else:
+                        cur_val = z3.BitVec(f"load_{caller_slot.lstrip('%')}", 32)
+                    memory_store[caller_slot] = cur_val
+
+                val_w = cur_val.size() if hasattr(cur_val, "size") else 32
+                callee_deref_sym = (
+                    z3.FP(f"deref_param_{p_idx}", cur_val.sort())
+                    if isinstance(cur_val, z3.FPRef)
+                    else z3.BitVec(f"deref_param_{p_idx}", val_w)
+                )
+                subst_pairs.append((callee_deref_sym, cur_val))
+            else:
+                caller_val = None
+                fp_sort = self._parse_fp_sort(arg_ty)
+                if fp_sort is not None:
+                    if arg_val_str.startswith("%") and arg_val_str in env:
+                        caller_val = env[arg_val_str]
+                    else:
+                        caller_val = self._parse_fp_val(arg_val_str, fp_sort)
+                elif arg_val_str.startswith("%") and arg_val_str in env:
+                    caller_val = env[arg_val_str]
+                elif arg_val_str.lstrip("-").isdigit():
+                    caller_val = z3.BitVecVal(int(arg_val_str), self._parse_width(arg_ty))
+
+                if p_idx < len(formal_param_items):
+                    f_name = formal_param_items[p_idx].split()[-1]
+                    if f_name in c_params and caller_val is not None:
+                        f_bv = c_params[f_name]
+                        if isinstance(f_bv, list) and isinstance(caller_val, list) and len(f_bv) == len(caller_val):
+                            for f_ln, a_ln in zip(f_bv, caller_val):
+                                subst_pairs.append((f_ln, a_ln))
+                        elif hasattr(f_bv, "size") and hasattr(caller_val, "size"):
+                            if caller_val.size() < f_bv.size():
+                                caller_val = z3.ZeroExt(f_bv.size() - caller_val.size(), caller_val)
+                            elif caller_val.size() > f_bv.size():
+                                caller_val = z3.Extract(f_bv.size() - 1, 0, caller_val)
+                            subst_pairs.append((f_bv, caller_val))
+                        elif isinstance(f_bv, z3.FPRef) and isinstance(caller_val, z3.FPRef):
+                            subst_pairs.append((f_bv, caller_val))
+
+        is_void_post = (
+            isinstance(c_ret, tuple)
+            and len(c_ret) == 2
+            and c_ret[0] == "__void_post__"
+            and isinstance(c_ret[1], dict)
+        )
+        post_dict = c_ret[1] if is_void_post else {}
+        for post_key, post_expr in post_dict.items():
+            callee_idx = int(post_key.replace("__post_param_deref_", "").replace("__", ""))
+            if callee_idx < len(arg_items):
+                arg_parts = arg_items[callee_idx].split()
+                if arg_parts:
+                    arg_val_str = arg_parts[-1]
+                    caller_slot = self._resolve_ptr_slot(arg_val_str, env, memory_store)
+                    mutated_val = z3.substitute(post_expr, *subst_pairs) if subst_pairs else post_expr
+                    memory_store[caller_slot] = mutated_val
+                    if caller_slot.startswith("__param_deref_"):
+                        memory_store[f"__post_{caller_slot.strip('_')}__"] = mutated_val
+
+        if ret_var is not None and not is_void_post:
+            if isinstance(c_ret, list):
+                env[ret_var] = [
+                    z3.substitute(ln, *subst_pairs) if subst_pairs else ln for ln in c_ret
+                ]
+            else:
+                env[ret_var] = z3.substitute(c_ret, *subst_pairs) if subst_pairs else c_ret
+
+        return True
+
     def evaluate_function(
         self,
         ret_ty: str,
@@ -622,6 +782,21 @@ class SymbolicIRVerifier:
                     ret_expr = z3.BitVecVal(1, 1)
                 elif val_name == "false":
                     ret_expr = z3.BitVecVal(0, 1)
+                continue
+
+            # Standalone call instruction without return value (e.g. call void @callee(...))
+            clean_call = re.sub(r"^(?:tail|musttail|notail)\s+", "", line)
+            if clean_call.startswith("call "):
+                if not self._inline_callee(
+                    clean_call,
+                    ret_var=None,
+                    env=env,
+                    memory_store=memory_store,
+                    overflow_checks=overflow_checks,
+                    module_funcs=module_funcs,
+                    call_depth=call_depth,
+                ):
+                    return params, None, overflow_checks
                 continue
 
             # Assignment: %res = op ...
@@ -998,39 +1173,16 @@ class SymbolicIRVerifier:
                             elif intr_name == "llvm.umin":
                                 env[var] = z3.If(z3.ULT(o1, o2), o1, o2)
                             continue
-                    if module_funcs and call_depth < 4:
-                        m_ucall = re.search(r"@([\w.]+)\s*\((.*?)\)", expr)
-                        if m_ucall and m_ucall.group(1) in module_funcs:
-                            callee_name = m_ucall.group(1)
-                            c_ret_ty, c_params_raw, c_body = module_funcs[callee_name]
-                            arg_tokens = m_ucall.group(2).replace(",", " ").split()
-                            call_args = self._parse_operands(arg_tokens, env)
-                            c_params, c_ret, _ = self.evaluate_function(
-                                c_ret_ty,
-                                c_params_raw,
-                                c_body,
-                                module_funcs=module_funcs,
-                                call_depth=call_depth + 1,
-                            )
-                            if c_ret is not None and len(call_args) == len(c_params):
-                                subst_pairs = []
-                                for f_bv, a_val in zip(c_params.values(), call_args):
-                                    if isinstance(f_bv, list) and isinstance(a_val, list) and len(f_bv) == len(a_val):
-                                        for f_ln, a_ln in zip(f_bv, a_val):
-                                            subst_pairs.append((f_ln, a_ln))
-                                    elif hasattr(f_bv, "size") and hasattr(a_val, "size"):
-                                        if a_val.size() < f_bv.size():
-                                            a_val = z3.ZeroExt(f_bv.size() - a_val.size(), a_val)
-                                        elif a_val.size() > f_bv.size():
-                                            a_val = z3.Extract(f_bv.size() - 1, 0, a_val)
-                                        subst_pairs.append((f_bv, a_val))
-                                if isinstance(c_ret, list):
-                                    env[var] = [
-                                        z3.substitute(ln, *subst_pairs) if subst_pairs else ln for ln in c_ret
-                                    ]
-                                else:
-                                    env[var] = z3.substitute(c_ret, *subst_pairs) if subst_pairs else c_ret
-                                continue
+                    if self._inline_callee(
+                        expr,
+                        ret_var=var,
+                        env=env,
+                        memory_store=memory_store,
+                        overflow_checks=overflow_checks,
+                        module_funcs=module_funcs,
+                        call_depth=call_depth,
+                    ):
+                        continue
                     return params, None, overflow_checks
 
                 if op == "alloca":

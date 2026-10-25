@@ -1415,3 +1415,74 @@ entry:
         assert res_bug.verdict == "FAILED"
         assert res_bug.proved is False
         assert res_bug.counterexample is not None
+
+    def test_interprocedural_pointer_mutation_inlining(self):
+        from engine.symbolic_verifier import verify_ir_equivalence
+
+        # 1. Caller stack alloca + call void @swap_i32(ptr %x, ptr %y) vs direct SSA subtract
+        src_caller_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %0 = load i32, ptr %a, align 4
+          %1 = load i32, ptr %b, align 4
+          store i32 %1, ptr %a, align 4
+          store i32 %0, ptr %b, align 4
+          ret void
+        }
+
+        define i32 @test_caller(i32 %a, i32 %b) {
+        entry:
+          %x = alloca i32, align 4
+          %y = alloca i32, align 4
+          store i32 %a, ptr %x, align 4
+          store i32 %b, ptr %y, align 4
+          call void @swap_i32(ptr %x, ptr %y)
+          %rx = load i32, ptr %x, align 4
+          %ry = load i32, ptr %y, align 4
+          %diff = sub i32 %rx, %ry
+          ret i32 %diff
+        }
+        """
+
+        tgt_caller_swap = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %0 = load i32, ptr %a, align 4
+          %1 = load i32, ptr %b, align 4
+          store i32 %1, ptr %a, align 4
+          store i32 %0, ptr %b, align 4
+          ret void
+        }
+
+        define i32 @test_caller(i32 %a, i32 %b) {
+        entry:
+          %diff = sub i32 %b, %a
+          ret i32 %diff
+        }
+        """
+        res_proved = verify_ir_equivalence(src_caller_swap, tgt_caller_swap)
+        assert res_proved.verdict == "PROVED"
+        assert res_proved.proved is True
+
+        # 2. Buggy caller expecting sub %a, %b instead of sub %b, %a -> FAILED
+        tgt_buggy_caller = """
+        define void @swap_i32(ptr %a, ptr %b) {
+        entry:
+          %0 = load i32, ptr %a, align 4
+          %1 = load i32, ptr %b, align 4
+          store i32 %1, ptr %a, align 4
+          store i32 %0, ptr %b, align 4
+          ret void
+        }
+
+        define i32 @test_caller(i32 %a, i32 %b) {
+        entry:
+          %diff = sub i32 %a, %b
+          ret i32 %diff
+        }
+        """
+        res_failed = verify_ir_equivalence(src_caller_swap, tgt_buggy_caller)
+        assert res_failed.verdict == "FAILED"
+        assert res_failed.proved is False
+        assert res_failed.counterexample is not None
+
