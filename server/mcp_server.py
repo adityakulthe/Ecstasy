@@ -729,6 +729,14 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_supervise_pipeline",
             "description": "Execute the full 9-agent parallel deliberation & formal verification compiler pipeline",
         },
+        {
+            "name": "mcp_prove_vulnerability",
+            "description": "Formally prove CWE exploitability via Z3 SMT (CWE-125, CWE-787, CWE-190, CWE-369, CWE-476) and synthesize triggering payloads",
+        },
+        {
+            "name": "mcp_verify_constant_time",
+            "description": "Formally verify cryptographic constant-time side-channel resistance (CWE-208 / CWE-385) on LLVM IR",
+        },
     ]
 
 
@@ -830,6 +838,28 @@ def mcp_supervise_pipeline(c_code: str, max_retries: int = 2, enable_advanced: b
         except OSError:
             pass
     return res
+
+
+@_mcp_tool
+def mcp_prove_vulnerability(llvm_ir: str, timeout_sec: int = 15) -> Dict[str, Any]:
+    """Formally prove CWE exploitability via Z3 SMT and synthesize triggering exploit payloads."""
+    from engine.smt_vulnerability_prover import audit_ir_security
+
+    dossier = audit_ir_security(llvm_ir, timeout_sec=timeout_sec)
+    return dossier.to_dict()
+
+
+@_mcp_tool
+def mcp_verify_constant_time(
+    llvm_ir: str,
+    secret_params: Optional[List[str]] = None,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Formally verify cryptographic constant-time side-channel resistance (CWE-208 / CWE-385)."""
+    from engine.crypto_timing_verifier import verify_crypto_constant_time
+
+    report = verify_crypto_constant_time(llvm_ir, secret_params=secret_params, timeout_sec=timeout_sec)
+    return report.to_dict()
 
 
 if __name__ == "__main__":

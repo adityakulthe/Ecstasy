@@ -1351,6 +1351,110 @@ def render_council_and_sarif_tab():
             )
 
 
+def render_cyber_defense_studio():
+    """Render the Provable Cyber Defense & SMT Exploit Studio tab."""
+    st.markdown("### 🛡️ Ecstasy Provable Cyber Defense (PCD) Studio")
+    st.markdown(
+        "Mathematically prove low-level vulnerabilities via **Z3 SMT solver**, synthesize **concrete exploit payloads**, "
+        "and formally verify **cryptographic constant-time side-channel resistance (CWE-208 / CWE-385)**."
+    )
+
+    CYBER_PRESETS = {
+        "Unbounded Array Access (CWE-125/787 Buffer Overflow Trigger)": (
+            "define i32 @access_buffer(i32 %idx) {\nentry:\n  %buf = alloca [10 x i32], align 4\n  %ptr = getelementptr inbounds [10 x i32], ptr %buf, i64 0, i32 %idx\n  %val = load i32, ptr %ptr, align 4\n  ret i32 %val\n}"
+        ),
+        "Symbolic Divide-by-Zero (CWE-369 CPU Crash / SIGFPE)": (
+            "define i32 @unprotected_divide(i32 %a, i32 %b) {\nentry:\n  %res = sdiv i32 %a, %b\n  ret i32 %res\n}"
+        ),
+        "Crypto Timing Leak: Secret-Dependent Branch (CWE-208)": (
+            "define i32 @compare_mac(i32 %key, i32 %input) {\nentry:\n  %match = icmp eq i32 %key, %input\n  br i1 %match, label %then, label %else\nthen:\n  ret i32 1\nelse:\n  ret i32 0\n}"
+        ),
+        "Crypto Cache Timing: Secret Table Lookup (CWE-385)": (
+            "define i32 @aes_sbox_lookup(ptr %sbox, i32 %key, i32 %pt) {\nentry:\n  %idx = xor i32 %key, %pt\n  %ptr = getelementptr inbounds i32, ptr %sbox, i32 %idx\n  %val = load i32, ptr %ptr, align 4\n  ret i32 %val\n}"
+        ),
+        "Constant-Time Cryptographic Multiplexer (Provably Immune)": (
+            "define i32 @constant_time_mux(i32 %key, i32 %val_a, i32 %val_b) {\nentry:\n  %mask = ashr i32 %key, 31\n  %inv = xor i32 %mask, -1\n  %t1 = and i32 %val_a, %mask\n  %t2 = and i32 %val_b, %inv\n  %res = or i32 %t1, %t2\n  ret i32 %res\n}"
+        ),
+        "Memory Lifecycle: Double-Free (CWE-415)": (
+            "define void @bad_cleanup(ptr %p) {\nentry:\n  call void @free(ptr %p)\n  call void @free(ptr %p)\n  ret void\n}"
+        ),
+    }
+
+    selected_cyber_preset = st.selectbox("Load Cybersecurity Preset:", list(CYBER_PRESETS.keys()))
+    default_ir = CYBER_PRESETS[selected_cyber_preset]
+
+    target_ir = st.text_area("LLVM IR Target under Analysis:", value=default_ir, height=200, key=f"cyber_{selected_cyber_preset}")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        run_exploit_audit = st.button("⚡ Run SMT Exploit & Vulnerability Prover", use_container_width=True, type="primary")
+    with c2:
+        run_crypto_audit = st.button("⏱️ Verify Cryptographic Constant-Time", use_container_width=True)
+
+    if run_exploit_audit:
+        with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
+            from engine.smt_vulnerability_prover import audit_ir_security
+            dossier = audit_ir_security(target_ir)
+
+            st.divider()
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                status_color = "🟢" if dossier.is_deployable else "🔴"
+                st.metric("Deployable Status", f"{status_color} {'DEPLOYABLE' if dossier.is_deployable else 'VULNERABLE'}")
+            with m2:
+                st.metric("Overall CVSS Score", f"{dossier.overall_risk_score} / 10.0")
+            with m3:
+                st.metric("Vulnerabilities Found", str(len(dossier.vulnerabilities_found)))
+            with m4:
+                st.metric("Formal Safety Proofs", str(len(dossier.safety_proofs)))
+
+            if dossier.vulnerabilities_found:
+                st.markdown("#### 🚨 Provably Reachable Vulnerabilities & Synthesized Exploits")
+                for v in dossier.vulnerabilities_found:
+                    with st.expander(f"⚠️ {v.cwe_id}: {v.cwe_name} (CVSS {v.cvss_score}) — @{v.function_name}", expanded=True):
+                        st.markdown(f"**Severity:** `{v.severity}` | **MITRE ATT&CK:** `{v.mitre_attack_id}`")
+                        st.markdown(f"**Description:** {v.description}")
+                        st.code(v.instruction, language="llvm")
+                        if v.exploit_payload:
+                            st.markdown("**🎯 Synthesized Concrete Exploit Trigger Payload:**")
+                            st.json(v.exploit_payload)
+                        st.markdown(f"**Formal Proof:** {v.proof_explanation}")
+
+            if dossier.safety_proofs:
+                st.markdown("#### 🛡️ Mathematically Proven Safety Invariants")
+                for p in dossier.safety_proofs:
+                    st.success(f"✅ **{p.cwe_id}: {p.cwe_name}** in `@{p.function_name}`: {p.proof_explanation}")
+
+            sarif_records = dossier.to_sarif_records()
+            st.download_button(
+                label="📥 Download OASIS SARIF v2.1.0 Report",
+                data=json.dumps(sarif_records, indent=2),
+                file_name="ecstasy-vulnerability-dossier.sarif",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+    if run_crypto_audit:
+        with st.spinner("Tracking symbolic secrets & analyzing execution/cache side channels..."):
+            from engine.crypto_timing_verifier import verify_crypto_constant_time, TimingVerdict
+            report = verify_crypto_constant_time(target_ir)
+
+            st.divider()
+            if report.is_constant_time:
+                st.success("### 🟢 CONSTANT-TIME PROVED")
+                st.markdown(report.proof_explanation)
+            else:
+                st.error("### 🔴 TIMING SIDE-CHANNEL LEAK DETECTED (CWE-208 / CWE-385)")
+                st.markdown(report.proof_explanation)
+                for v in report.violations:
+                    with st.expander(f"🚨 {v.leak_type} in @{v.function_name}", expanded=True):
+                        st.markdown(f"**Instruction:** `{v.instruction}`")
+                        st.markdown(f"**Tainted Register:** `{v.tainted_register}`")
+                        st.markdown(f"**Secret Sources:** `{', '.join(v.secret_sources)}`")
+                        st.markdown(f"**Description:** {v.description}")
+                        st.info(f"💡 **Remediation:** {v.remediation}")
+
+
 def main():
     """Main application entry point"""
     # Initialize session state
@@ -1368,11 +1472,12 @@ def main():
     st.markdown('<div class="sub-header">Formally Verified AI Compiler & Security Pipeline</div>', unsafe_allow_html=True)
     
     # Navigation tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Standard View",
         "🎬 Live Pipeline Dashboard",
         "🔐 SMT Verifier & Certificate Inspector",
         "🏛️ Agent Council, Benchmark & SARIF Audit",
+        "🛡️ Cyber Defense & SMT Exploit Studio",
     ])
     
     with tab1:
@@ -1386,6 +1491,9 @@ def main():
 
     with tab4:
         render_council_and_sarif_tab()
+
+    with tab5:
+        render_cyber_defense_studio()
 
 
 if __name__ == "__main__":

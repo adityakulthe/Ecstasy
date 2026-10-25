@@ -910,11 +910,13 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 6
+        assert len(manifest) == 8
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
         assert "mcp_audit_memory_safety" in names
+        assert "mcp_prove_vulnerability" in names
+        assert "mcp_verify_constant_time" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)
@@ -1485,4 +1487,152 @@ entry:
         assert res_failed.verdict == "FAILED"
         assert res_failed.proved is False
         assert res_failed.counterexample is not None
+
+    def test_smt_prover_divide_by_zero_exploit_synthesis(self):
+        from engine.smt_vulnerability_prover import audit_ir_security, VulnerabilityVerdict
+
+        # 1. Unbounded symbolic divisor -> EXPLOITABLE with synthesized exploit payload (b == 0)
+        vuln_ir = """
+        define i32 @vuln_divide(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        dossier = audit_ir_security(vuln_ir)
+        assert dossier.is_deployable is False
+        assert len(dossier.vulnerabilities_found) == 1
+        vuln = dossier.vulnerabilities_found[0]
+        assert vuln.cwe_id == "CWE-369"
+        assert vuln.verdict == VulnerabilityVerdict.EXPLOITABLE
+        assert vuln.exploit_payload is not None
+        assert "%b" in vuln.exploit_payload
+        assert vuln.exploit_payload["%b"] == 0
+
+        # 2. Constant non-zero divisor -> PROVABLY_SAFE
+        safe_ir = """
+        define i32 @safe_divide(i32 %a) {
+        entry:
+          %res = sdiv i32 %a, 10
+          ret i32 %res
+        }
+        """
+        dossier_safe = audit_ir_security(safe_ir)
+        assert dossier_safe.is_deployable is True
+        assert len(dossier_safe.vulnerabilities_found) == 0
+        assert len(dossier_safe.safety_proofs) == 1
+        assert dossier_safe.safety_proofs[0].verdict == VulnerabilityVerdict.PROVABLY_SAFE
+
+    def test_smt_prover_buffer_out_of_bounds_exploit_synthesis(self):
+        from engine.smt_vulnerability_prover import audit_ir_security, VulnerabilityVerdict
+
+        # 1. Symbolic array index with buffer capacity 10 -> EXPLOITABLE
+        oob_ir = """
+        define i32 @vuln_array_access(i32 %idx) {
+        entry:
+          %buf = alloca [10 x i32], align 4
+          %ptr = getelementptr inbounds [10 x i32], ptr %buf, i64 0, i32 %idx
+          %val = load i32, ptr %ptr, align 4
+          ret i32 %val
+        }
+        """
+        dossier = audit_ir_security(oob_ir)
+        assert dossier.is_deployable is False
+        assert len(dossier.vulnerabilities_found) == 1
+        vuln = dossier.vulnerabilities_found[0]
+        assert vuln.cwe_id == "CWE-125/787"
+        assert vuln.verdict == VulnerabilityVerdict.EXPLOITABLE
+        assert vuln.exploit_payload is not None
+        assert "%idx" in vuln.exploit_payload
+        oob_idx = vuln.exploit_payload["%idx"]
+        assert oob_idx < 0 or oob_idx >= 10
+
+        # 2. Statically in-bounds index 4 -> PROVABLY_SAFE
+        inbounds_ir = """
+        define i32 @safe_array_access() {
+        entry:
+          %buf = alloca [10 x i32], align 4
+          %ptr = getelementptr inbounds [10 x i32], ptr %buf, i64 0, i64 4
+          %val = load i32, ptr %ptr, align 4
+          ret i32 %val
+        }
+        """
+        dossier_inbounds = audit_ir_security(inbounds_ir)
+        assert dossier_inbounds.is_deployable is True
+        assert len(dossier_inbounds.vulnerabilities_found) == 0
+        assert len(dossier_inbounds.safety_proofs) == 1
+        assert dossier_inbounds.safety_proofs[0].verdict == VulnerabilityVerdict.PROVABLY_SAFE
+
+    def test_crypto_timing_side_channel_verification(self):
+        from engine.crypto_timing_verifier import verify_crypto_constant_time, TimingVerdict
+
+        # 1. Non-constant-time crypto kernel: secret influences branch condition (CWE-208)
+        leaky_branch_ir = """
+        define i32 @compare_mac(i32 %key, i32 %input) {
+        entry:
+          %match = icmp eq i32 %key, %input
+          br i1 %match, label %then, label %else
+        then:
+          ret i32 1
+        else:
+          ret i32 0
+        }
+        """
+        report_branch = verify_crypto_constant_time(leaky_branch_ir)
+        assert report_branch.is_constant_time is False
+        assert report_branch.verdict == TimingVerdict.TIMING_LEAK
+        assert len(report_branch.violations) == 1
+        assert report_branch.violations[0].leak_type == "BRANCH_TIMING_LEAK"
+
+        # 2. Non-constant-time crypto kernel: secret influences table lookup address (CWE-385)
+        leaky_cache_ir = """
+        define i32 @aes_sbox_lookup(ptr %sbox, i32 %key, i32 %pt) {
+        entry:
+          %idx = xor i32 %key, %pt
+          %ptr = getelementptr inbounds i32, ptr %sbox, i32 %idx
+          %val = load i32, ptr %ptr, align 4
+          ret i32 %val
+        }
+        """
+        report_cache = verify_crypto_constant_time(leaky_cache_ir)
+        assert report_cache.is_constant_time is False
+        assert report_cache.verdict == TimingVerdict.TIMING_LEAK
+        assert any(v.leak_type == "CACHE_TIMING_LEAK" for v in report_cache.violations)
+
+        # 3. Constant-time crypto kernel: branchless bitwise logic
+        constant_time_ir = """
+        define i32 @constant_time_mux(i32 %key, i32 %val_a, i32 %val_b) {
+        entry:
+          %mask = ashr i32 %key, 31
+          %inv = xor i32 %mask, -1
+          %t1 = and i32 %val_a, %mask
+          %t2 = and i32 %val_b, %inv
+          %res = or i32 %t1, %t2
+          ret i32 %res
+        }
+        """
+        report_ct = verify_crypto_constant_time(constant_time_ir)
+        assert report_ct.is_constant_time is True
+        assert report_ct.verdict == TimingVerdict.CONSTANT_TIME
+        assert len(report_ct.violations) == 0
+
+    def test_fastmcp_cybersecurity_tools(self):
+        from server.mcp_server import mcp_prove_vulnerability, mcp_verify_constant_time
+
+        sample_ir = """
+        define i32 @calc(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        vuln_res = mcp_prove_vulnerability(sample_ir)
+        assert "vulnerabilities_count" in vuln_res
+        assert vuln_res["vulnerabilities_count"] == 1
+        assert vuln_res["vulnerabilities"][0]["cwe_id"] == "CWE-369"
+
+        ct_res = mcp_verify_constant_time(sample_ir)
+        assert "is_constant_time" in ct_res
+        assert ct_res["is_constant_time"] is True
+
 
