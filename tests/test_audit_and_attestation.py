@@ -910,7 +910,7 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 13
+        assert len(manifest) == 14
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
@@ -922,6 +922,7 @@ entry:
         assert "mcp_verify_exploit_poc" in names
         assert "mcp_synthesize_constant_time" in names
         assert "mcp_analyze_attack_surface" in names
+        assert "mcp_enforce_cfi" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)
@@ -1888,6 +1889,42 @@ entry:
         assert attack_res["techniques_count"] >= 1
         assert "navigator_layer" in attack_res
         assert attack_res["navigator_layer"]["domain"] == "enterprise-attack"
+
+    def test_cfi_protector_indirect_call_hardening(self):
+        from engine.cfi_protector import enforce_control_flow_integrity
+
+        indirect_call_ir = """
+        define i32 @dispatch_handler(ptr %handler, i32 %val) {
+        entry:
+          %res = call i32 %handler(i32 %val)
+          ret i32 %res
+        }
+        """
+        rep = enforce_control_flow_integrity(indirect_call_ir)
+        assert len(rep.violations) == 1
+        assert rep.violations[0].cwe_id == "CWE-822"
+        assert len(rep.patches) == 1
+        assert rep.cfi_enforced_proved is True
+        assert "_safe_callee" in rep.hardened_ir
+        assert "select" in rep.hardened_ir
+
+    def test_mcp_enforce_cfi_tool(self):
+        from server.mcp_server import mcp_enforce_cfi
+
+        indirect_ir = """
+        define void @process_event(ptr %cb, ptr %data) {
+        entry:
+          call void %cb(ptr %data)
+          ret void
+        }
+        """
+        res = mcp_enforce_cfi(indirect_ir)
+        assert res["violations_count"] == 1
+        assert res["patches_count"] == 1
+        assert res["cfi_enforced_proved"] is True
+        assert "hardened_ir" in res
+        assert "_safe_callee" in res["hardened_ir"]
+
 
 
 

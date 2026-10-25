@@ -1378,6 +1378,9 @@ def render_cyber_defense_studio():
         "Memory Lifecycle: Double-Free (CWE-415)": (
             "define void @bad_cleanup(ptr %p) {\nentry:\n  call void @free(ptr %p)\n  call void @free(ptr %p)\n  ret void\n}"
         ),
+        "Indirect Call Hijacking: Missing Forward-Edge CFI (CWE-822 / ROP / JOP)": (
+            "define i32 @dispatch_handler(ptr %handler, i32 %val) {\nentry:\n  %res = call i32 %handler(i32 %val)\n  ret i32 %res\n}"
+        ),
     }
 
     selected_cyber_preset = st.selectbox("Load Cybersecurity Preset:", list(CYBER_PRESETS.keys()))
@@ -1385,13 +1388,15 @@ def render_cyber_defense_studio():
 
     target_ir = st.text_area("LLVM IR Target under Analysis:", value=default_ir, height=200, key=f"cyber_{selected_cyber_preset}")
 
-    r1_c1, r1_c2, r1_c3 = st.columns(3)
+    r1_c1, r1_c2, r1_c3, r1_c4 = st.columns(4)
     with r1_c1:
         run_exploit_audit = st.button("⚡ SMT Exploit Prover", use_container_width=True, type="primary")
     with r1_c2:
         run_crypto_audit = st.button("⏱️ Verify Constant-Time", use_container_width=True)
     with r1_c3:
         run_hardening = st.button("🛡️ SMT-Verified Hardening", use_container_width=True)
+    with r1_c4:
+        run_cfi = st.button("🛡️ Enforce CFI", use_container_width=True)
 
     r2_c1, r2_c2, r2_c3, r2_c4 = st.columns(4)
     with r2_c1:
@@ -1598,6 +1603,29 @@ def render_cyber_defense_studio():
                 mime="application/json",
                 use_container_width=True,
             )
+
+    if run_cfi:
+        with st.spinner("Analyzing indirect call targets and injecting forward-edge CFI guards..."):
+            from engine.cfi_protector import enforce_control_flow_integrity
+            cfi_rep = enforce_control_flow_integrity(target_ir)
+
+            st.divider()
+            st.markdown(f"### 🛡️ Forward-Edge Control-Flow Integrity (CFI): {len(cfi_rep.patches)} Guard(s) Injected")
+            if cfi_rep.cfi_enforced_proved:
+                st.success("✅ **FORWARD-EDGE CFI FORMALLY ENFORCED: ROP/JOP HIJACKING NEUTRALIZED**")
+            else:
+                st.info("ℹ️ No unconstrained indirect calls detected in module.")
+
+            for p in cfi_rep.patches:
+                with st.expander(f"🛡️ CFI Table Guard in @{p.function_name}", expanded=True):
+                    st.markdown(f"**Description:** {p.description}")
+                    st.markdown("**Original Unconstrained Indirect Call:**")
+                    st.code(p.original_instruction, language="llvm")
+                    st.markdown("**Hardened with CFI Table Validation:**")
+                    st.code(p.hardened_instruction, language="llvm")
+
+            st.markdown("#### CFI-Hardened LLVM IR")
+            st.code(cfi_rep.hardened_ir, language="llvm")
 
 
 def main():

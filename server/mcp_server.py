@@ -807,6 +807,10 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_analyze_attack_surface",
             "description": "Analyze full-spectrum cyber attack surface and export MITRE ATT&CK Matrix Navigator v4.3 layer",
         },
+        {
+            "name": "mcp_enforce_cfi",
+            "description": "Enforce forward-edge Control-Flow Integrity (CFI) on indirect function calls to prevent ROP/JOP hijacking",
+        },
     ]
 
 
@@ -1030,6 +1034,18 @@ def mcp_analyze_attack_surface(
     ct_rep = verify_crypto_constant_time(llvm_ir, secret_params=secret_params, timeout_sec=timeout_sec)
     att_rep = analyze_attack_surface(dossier, ct_rep)
     return att_rep.to_dict()
+
+
+@_mcp_tool
+def mcp_enforce_cfi(
+    llvm_ir: str,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Enforce forward-edge Control-Flow Integrity (CFI) on indirect function calls to prevent ROP/JOP hijacking."""
+    from engine.cfi_protector import enforce_control_flow_integrity
+
+    rep = enforce_control_flow_integrity(llvm_ir, timeout_sec=timeout_sec)
+    return rep.to_dict()
 
 
 if __name__ == "__main__":
