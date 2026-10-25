@@ -1385,15 +1385,17 @@ def render_cyber_defense_studio():
 
     target_ir = st.text_area("LLVM IR Target under Analysis:", value=default_ir, height=200, key=f"cyber_{selected_cyber_preset}")
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         run_exploit_audit = st.button("⚡ SMT Exploit Prover", use_container_width=True, type="primary")
     with c2:
         run_crypto_audit = st.button("⏱️ Verify Constant-Time", use_container_width=True)
     with c3:
-        run_hardening = st.button("🛡️ SMT-Verified Hardening", use_container_width=True)
+        run_hardening = st.button("🛡️ SMT Hardening", use_container_width=True)
     with c4:
-        run_cbom_export = st.button("📜 Export CycloneDX CBOM", use_container_width=True)
+        run_cbom_export = st.button("📜 Export CBOM", use_container_width=True)
+    with c5:
+        run_fuzzer = st.button("💥 Exploit Sandbox", use_container_width=True)
 
     if run_exploit_audit:
         with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
@@ -1497,6 +1499,37 @@ def render_cyber_defense_studio():
                 mime="application/json",
                 use_container_width=True,
             )
+
+    if run_fuzzer:
+        with st.spinner("Compiling Red-Team exploit PoC and testing sandbox defense against Apple clang..."):
+            from engine.smt_vulnerability_prover import audit_ir_security
+            from engine.security_hardening import harden_llvm_ir
+            from engine.exploit_fuzzer import DifferentialExploitFuzzer
+
+            dossier = audit_ir_security(target_ir)
+            if not dossier.vulnerabilities_found:
+                st.info("ℹ️ Target IR has no provable vulnerabilities! Fuzzer test bypassed.")
+            else:
+                h_rep = harden_llvm_ir(target_ir)
+                fuzzer = DifferentialExploitFuzzer()
+                st.divider()
+                st.markdown("### 💥 Red-Team vs Blue-Team Differential Exploit Verification")
+                for vuln in dossier.vulnerabilities_found:
+                    rep = fuzzer.verify_exploit(target_ir, h_rep.hardened_ir, vuln)
+                    status_badge = "✅ EXPLOIT NEUTRALIZED BY PATCH" if rep.exploit_verified else "⚠️ DIFFERENTIAL CHECK INCONCLUSIVE"
+                    with st.expander(f"💥 {vuln.cwe_id} in @{vuln.function_name} — {status_badge}", expanded=True):
+                        col_red, col_blue = st.columns(2)
+                        with col_red:
+                            st.markdown(f"**🔴 Red-Team Run (Unhardened):** `{rep.unhardened_status}`")
+                            st.caption("Unhardened binary faults upon payload delivery.")
+                        with col_blue:
+                            st.markdown(f"**🟢 Blue-Team Run (Hardened):** `{rep.hardened_status}`")
+                            st.caption("Hardened binary safely neutralizes payload (`SAFE_EXIT_0`).")
+
+                        st.markdown("**Standalone C PoC Driver:**")
+                        st.code(rep.poc_c_source, language="c")
+                        st.markdown("**Differential Execution Log:**")
+                        st.code(rep.execution_log)
 
 
 def main():

@@ -426,9 +426,9 @@ def export_sarif_report(audit_records: list, output_path: Optional[str] = None) 
     for rec in audit_records:
         file_uri = str(rec.get("file", "unknown.c"))
         for finding in rec.get("findings", []):
-            m_cwe = re.match(r"^(CWE-[0-9/]+):\s*(.*)$", finding)
+            m_cwe = re.search(r"(CWE-[0-9/]+)", finding)
             rule_id = m_cwe.group(1) if m_cwe else "ECSTASY-MEM-001"
-            msg_text = m_cwe.group(2) if m_cwe else finding
+            msg_text = finding
             if rule_id not in rules_map:
                 rules_map[rule_id] = {
                     "id": rule_id,
@@ -436,21 +436,71 @@ def export_sarif_report(audit_records: list, output_path: Optional[str] = None) 
                     "shortDescription": {"text": f"Ecstasy LLVM IR Memory & UB Check ({rule_id})"},
                     "defaultConfiguration": {"level": "warning"},
                 }
-            sarif_results.append(
-                {
-                    "ruleId": rule_id,
-                    "level": "warning",
-                    "message": {"text": msg_text},
-                    "locations": [
-                        {
-                            "physicalLocation": {
-                                "artifactLocation": {"uri": file_uri},
-                                "region": {"startLine": 1},
-                            }
-                        }
-                    ],
-                }
+            # Determine level
+            is_critical = any(
+                kw in finding
+                for kw in (
+                    "CRITICAL",
+                    "CWE-125",
+                    "CWE-787",
+                    "CWE-415",
+                    "CWE-416",
+                    "CWE-369",
+                    "CWE-190",
+                    "CWE-476",
+                    "Double-free",
+                    "Use-after-free",
+                    "Exploit trigger",
+                )
             )
+            level_str = "error" if is_critical else "warning"
+
+            res_entry: Dict[str, Any] = {
+                "ruleId": rule_id,
+                "level": level_str,
+                "message": {"text": msg_text},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": file_uri},
+                            "region": {"startLine": 1},
+                        }
+                    }
+                ],
+            }
+
+            # If exploit trigger payload is present in finding, attach OASIS SARIF v2.1.0 codeFlows
+            if "Exploit trigger:" in finding or "exploit" in finding.lower():
+                res_entry["codeFlows"] = [
+                    {
+                        "threadFlows": [
+                            {
+                                "locations": [
+                                    {
+                                        "location": {
+                                            "message": {"text": "Step 1: Attacker supplies synthesized SMT exploit payload to function arguments"},
+                                            "physicalLocation": {
+                                                "artifactLocation": {"uri": file_uri},
+                                                "region": {"startLine": 1},
+                                            },
+                                        }
+                                    },
+                                    {
+                                        "location": {
+                                            "message": {"text": f"Step 2: Memory operation or arithmetic sink reached ({rule_id})"},
+                                            "physicalLocation": {
+                                                "artifactLocation": {"uri": file_uri},
+                                                "region": {"startLine": 1},
+                                            },
+                                        }
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                ]
+
+            sarif_results.append(res_entry)
 
     sarif_payload = {
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -745,6 +795,10 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_export_cbom",
             "description": "Generate CycloneDX v1.6 Cryptographic Bill of Materials (CBOM) with NIST SP 800-218 formal safety attestation",
         },
+        {
+            "name": "mcp_verify_exploit_poc",
+            "description": "Differentially verify synthesized SMT exploit PoC harness against unhardened vs hardened binaries in sandbox",
+        },
     ]
 
 
@@ -908,6 +962,36 @@ def mcp_export_cbom(
         vulnerability_dossier=smt_dos.to_dict(),
     )
     return cbom
+
+
+@_mcp_tool
+def mcp_verify_exploit_poc(
+    unhardened_ir: str,
+    hardened_ir: str,
+    function_name: str,
+    cwe_id: str,
+    exploit_payload: Optional[Dict[str, Any]] = None,
+    timeout_sec: int = 5,
+) -> Dict[str, Any]:
+    """Differentially verify synthesized SMT exploit PoC harness against unhardened vs hardened binaries in sandbox."""
+    from engine.smt_vulnerability_prover import VulnerabilityFinding, VulnerabilityVerdict
+    from engine.exploit_fuzzer import DifferentialExploitFuzzer
+
+    finding = VulnerabilityFinding(
+        cwe_id=cwe_id,
+        cwe_name=cwe_id,
+        function_name=function_name,
+        verdict=VulnerabilityVerdict.EXPLOITABLE,
+        severity="CRITICAL",
+        cvss_score=9.8,
+        mitre_attack_id="T1190",
+        description=f"Differential PoC exploit verification for {cwe_id}",
+        instruction="",
+        exploit_payload=exploit_payload or {},
+    )
+    fuzzer = DifferentialExploitFuzzer(timeout_sec=timeout_sec)
+    report = fuzzer.verify_exploit(unhardened_ir, hardened_ir, finding)
+    return report.to_dict()
 
 
 if __name__ == "__main__":

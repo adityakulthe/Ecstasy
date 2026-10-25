@@ -910,7 +910,7 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 10
+        assert len(manifest) == 11
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
@@ -919,6 +919,7 @@ entry:
         assert "mcp_verify_constant_time" in names
         assert "mcp_harden_security" in names
         assert "mcp_export_cbom" in names
+        assert "mcp_verify_exploit_poc" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)
@@ -1716,6 +1717,93 @@ entry:
         cbom = mcp_export_cbom(llvm_ir=vuln_ir, project_name="TestMCPProject")
         assert cbom["bomFormat"] == "CycloneDX"
         assert cbom["specVersion"] == "1.6"
+
+    def test_differential_exploit_fuzzer_sandbox(self):
+        from engine.smt_vulnerability_prover import audit_ir_security
+        from engine.security_hardening import harden_llvm_ir
+        from engine.exploit_fuzzer import DifferentialExploitFuzzer
+
+        vuln_div_ir = """
+        define i32 @unprotected_divide(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        dossier = audit_ir_security(vuln_div_ir)
+        assert len(dossier.vulnerabilities_found) >= 1
+        finding = dossier.vulnerabilities_found[0]
+        assert finding.cwe_id == "CWE-369"
+        assert finding.exploit_payload.get("%b") == 0
+
+        h_rep = harden_llvm_ir(vuln_div_ir)
+        fuzzer = DifferentialExploitFuzzer(timeout_sec=5)
+        rep = fuzzer.verify_exploit(vuln_div_ir, h_rep.hardened_ir, finding)
+
+        assert rep.function_name == "unprotected_divide"
+        assert rep.cwe_id == "CWE-369"
+        assert "main" in rep.poc_c_source
+        assert rep.unhardened_crashed is True
+        assert "SIGFPE" in rep.unhardened_status or "CRASHED" in rep.unhardened_status
+        assert rep.hardened_safe is True
+        assert rep.hardened_status == "SAFE_EXIT_0"
+        assert rep.exploit_verified is True
+
+    def test_sarif_codeflows_and_threadflows_generation(self):
+        from server.mcp_server import export_sarif_report
+
+        records = [
+            {
+                "file": "crypto_core.c",
+                "findings": [
+                    "CWE-125 Buffer Out-of-Bounds: Exploit trigger: %idx=100",
+                    "CWE-369 Divide by Zero: Exploit trigger: %b=0",
+                ],
+            }
+        ]
+        sarif = export_sarif_report(records)
+        assert sarif["version"] == "2.1.0"
+        results = sarif["runs"][0]["results"]
+        assert len(results) == 2
+        for r in results:
+            assert r["level"] == "error"
+            assert "codeFlows" in r
+            flows = r["codeFlows"]
+            assert len(flows) >= 1
+            thread_flows = flows[0]["threadFlows"]
+            assert len(thread_flows) >= 1
+            steps = thread_flows[0]["locations"]
+            assert len(steps) == 2
+            assert "Step 1" in steps[0]["location"]["message"]["text"]
+            assert "Step 2" in steps[1]["location"]["message"]["text"]
+
+    def test_mcp_verify_exploit_poc_tool(self):
+        from server.mcp_server import mcp_verify_exploit_poc, mcp_harden_security
+
+        unhardened_ir = """
+        define i32 @unprotected_divide(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        h_res = mcp_harden_security(unhardened_ir)
+        hardened_ir = h_res["hardened_ir"]
+
+        poc_res = mcp_verify_exploit_poc(
+            unhardened_ir=unhardened_ir,
+            hardened_ir=hardened_ir,
+            function_name="unprotected_divide",
+            cwe_id="CWE-369",
+            exploit_payload={"%a": 42, "%b": 0},
+        )
+
+        assert poc_res["function_name"] == "unprotected_divide"
+        assert poc_res["cwe_id"] == "CWE-369"
+        assert poc_res["unhardened_crashed"] is True
+        assert poc_res["hardened_safe"] is True
+        assert poc_res["exploit_verified"] is True
+
 
 
 
