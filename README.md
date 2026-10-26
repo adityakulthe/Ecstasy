@@ -355,23 +355,21 @@ Executes the full test suite, evaluates the 8-benchmark empirical corpus, genera
 
 ## 📄 Academic Citation & Authorship
 
-If you use Ecstasy in your academic research, compiler infrastructure, or cybersecurity tooling, please cite our PLDI paper:
+If you use Ecstasy in your academic research, compiler infrastructure, or cybersecurity tooling, please cite the project repository and technical report:
 
 ```bibtex
-@inproceedings{kulthe2026ecstasy,
-  author    = {Aditya Kulthe},
-  title     = {Ecstasy: Provable Cyber Defense and Zero-Divergence Synthesis via Relational Hyperproperties in LLVM SSA},
-  booktitle = {Proceedings of the 47th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '26)},
-  year      = {2026},
-  publisher = {ACM},
-  address   = {New York, NY, USA},
-  doi       = {10.1145/3704841.3704850},
-  url       = {https://github.com/adityakulthe/Ecstasy}
+@misc{kulthe2026ecstasy,
+  author       = {Aditya Kulthe},
+  title        = {Ecstasy: Provable Cyber Defense and Zero-Divergence Synthesis via Relational Hyperproperties in LLVM SSA},
+  howpublished = {\url{https://github.com/adityakulthe/Ecstasy}},
+  note         = {Open-Source Software Artifact and Technical Report},
+  year         = {2026}
 }
 ```
 
 **Maintainer & Primary Author**:  
 **Aditya Kulthe** ([`kultheaditya23@gmail.com`](mailto:kultheaditya23@gmail.com))  
+GitHub: [@adityakulthe](https://github.com/adityakulthe)  
 Repository: [https://github.com/adityakulthe/Ecstasy](https://github.com/adityakulthe/Ecstasy)
 
 ---

@@ -53,3 +53,7 @@
   ```
 - All tests in `tests/` MUST pass with 0 failures and 0 leaked temp files.
 
+### Rule 9 — Zero Fabrication & Factual Grounding (100% Truth Standard)
+- **Zero Fabrication Invariant**: Never invent, simulate, or publish unverified claims, DOIs, fake conference proceedings, fake benchmarks, or mock certifications.
+- **Strict Evidence Standard**: Every metric, citation, CVE/CWE mapping, SMT solver latency, and test count published in README, documentation, or code comments must be backed by reproducible execution and verifiable repository artifacts.
+
