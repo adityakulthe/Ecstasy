@@ -112,6 +112,9 @@ jobs:
           # 15. Continuous Self-Healing Repository Watcher ("Ecstasy Watch")
           ecstasy watch demo_corpus/ --once
 
+          # 16. Academic & Scientific Artifact Reproduction & Hyperproperty Prover
+          ./scripts/reproduce_all_experiments.sh
+
       - name: Upload OASIS SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()
@@ -132,4 +135,8 @@ jobs:
             /tmp/cbom.json
             /tmp/navigator_layer.json
             /tmp/attestation.json
+            docs/benchmark_results.tex
+            paper/ecstasy_paper.md
+            paper/ecstasy_pldi.tex
+            ARTIFACT_EVALUATION.md
             coverage.xml

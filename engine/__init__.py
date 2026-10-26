@@ -91,6 +91,22 @@ from .self_healing_daemon import (
     DaemonStatus,
     WatchEvent,
 )
+from .formal_semantics import (
+    FormalSemanticsEngine,
+    FormalProofCertificate,
+    SemanticEvent,
+    SemanticEventType,
+)
+from .hyperproperty_prover import (
+    HyperpropertyProver,
+    HyperpropertyType,
+    HyperpropertyProofReport,
+)
+from .research_evaluator import (
+    ResearchEvaluator,
+    ResearchEvaluationReport,
+    BenchmarkExecutionMetric,
+)
 
 __all__ = [
     "SymbolicIRVerifier",
@@ -146,4 +162,14 @@ __all__ = [
     "SelfHealingDaemon",
     "DaemonStatus",
     "WatchEvent",
+    "FormalSemanticsEngine",
+    "FormalProofCertificate",
+    "SemanticEvent",
+    "SemanticEventType",
+    "HyperpropertyProver",
+    "HyperpropertyType",
+    "HyperpropertyProofReport",
+    "ResearchEvaluator",
+    "ResearchEvaluationReport",
+    "BenchmarkExecutionMetric",
 ]

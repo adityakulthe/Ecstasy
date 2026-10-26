@@ -847,6 +847,18 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_watch_repository",
             "description": "Run autonomous continuous self-healing repository watch daemon to audit, patch, and attest vulnerabilities in real time",
         },
+        {
+            "name": "mcp_export_formal_proof_certificate",
+            "description": "Export machine-checkable SMT-LIB2 / Lean 4 / Coq mathematical proof certificates for semantic equivalence and zero-divergence",
+        },
+        {
+            "name": "mcp_verify_hyperproperties",
+            "description": "Verify 2-Safety hyperproperties (Constant-Time, Speculative Non-Interference, Fault Immunity) via self-composition in Z3",
+        },
+        {
+            "name": "mcp_run_research_evaluation",
+            "description": "Execute empirical benchmark evaluation across compiler security corpus and generate LaTeX tables with statistical metrics",
+        },
     ]
 
 
@@ -1265,6 +1277,59 @@ def mcp_watch_repository(
     else:
         status = daemon.get_status()
         return status.to_dict()
+
+
+@_mcp_tool
+def mcp_export_formal_proof_certificate(
+    orig_ir: str,
+    transformed_ir: str,
+    function_name: Optional[str] = None,
+    theorem_type: str = "ZERO_DIVERGENCE",
+) -> Dict[str, Any]:
+    """Export machine-checkable SMT-LIB2 / Lean 4 / Coq mathematical proof certificates for semantic equivalence and zero-divergence."""
+    from engine.formal_semantics import FormalSemanticsEngine
+
+    engine = FormalSemanticsEngine()
+    if theorem_type == "TRANSLATION_VALIDATION":
+        cert = engine.prove_translation_validation(orig_ir, transformed_ir, function_name=function_name)
+    else:
+        cert = engine.prove_zero_divergence_refinement(orig_ir, transformed_ir, function_name=function_name)
+    return cert.to_dict()
+
+
+@_mcp_tool
+def mcp_verify_hyperproperties(
+    target_ir: str,
+    function_name: str = "security_func",
+    hyperproperty: str = "ALL",
+) -> Dict[str, Any]:
+    """Verify 2-Safety hyperproperties (Constant-Time, Speculative Non-Interference, Fault Immunity) via self-composition in Z3."""
+    from engine.hyperproperty_prover import HyperpropertyProver
+
+    prover = HyperpropertyProver()
+    res: Dict[str, Any] = {}
+    if hyperproperty in ("ALL", "CONSTANT_TIME"):
+        res["constant_time"] = prover.prove_constant_time_hyperproperty(target_ir, function_name=function_name).to_dict()
+    if hyperproperty in ("ALL", "SPECULATIVE_NON_INTERFERENCE"):
+        res["speculative_non_interference"] = prover.prove_speculative_non_interference(target_ir, function_name=function_name).to_dict()
+    if hyperproperty in ("ALL", "FAULT_INJECTION_IMMUNITY"):
+        res["fault_injection_immunity"] = prover.prove_fault_injection_immunity(target_ir, function_name=function_name).to_dict()
+    return res
+
+
+@_mcp_tool
+def mcp_run_research_evaluation(
+    export_latex: bool = True,
+) -> Dict[str, Any]:
+    """Execute empirical benchmark evaluation across compiler security corpus and generate LaTeX tables with statistical metrics."""
+    from engine.research_evaluator import ResearchEvaluator
+
+    evaluator = ResearchEvaluator()
+    report = evaluator.run_comprehensive_evaluation()
+    data = report.to_dict()
+    if export_latex:
+        data["latex_table"] = report.generate_latex_table()
+    return data
 
 
 if __name__ == "__main__":

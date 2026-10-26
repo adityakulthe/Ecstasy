@@ -1194,6 +1194,166 @@ def cmd_watch(args):
         print("=" * 70)
 
 
+def cmd_formal_proofs(args):
+    """Export machine-checkable proof certificates (SMT-LIB2, Lean 4, Coq) for Zero-Divergence."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_orig = comp["ir"]
+    else:
+        ir_orig = content
+
+    if getattr(args, "transformed", None):
+        trans_p = Path(args.transformed)
+        if not trans_p.exists():
+            print(f"❌ Error: Transformed file not found: {trans_p}")
+            sys.exit(1)
+        ir_trans = trans_p.read_text(encoding="utf-8")
+    else:
+        ir_trans = ir_orig
+
+    from engine.formal_semantics import FormalSemanticsEngine
+    engine = FormalSemanticsEngine(timeout_sec=args.timeout)
+    cert = engine.prove_zero_divergence_refinement(ir_orig, ir_trans, function_name=target_path.stem)
+
+    print("\n" + "=" * 70)
+    print("📜 FORMAL OPERATIONAL SEMANTICS & SOUNDNESS PROOF CERTIFICATE")
+    print("=" * 70)
+    print(f"Target Function:       @{cert.target_name}")
+    print(f"Theorem Type:          {cert.theorem_type}")
+    print(f"Mathematical Status:   {'🟢 PROVED (Sound Refinement)' if cert.is_proved else '🔴 DIVERGENCE DETECTED'}")
+    print(f"Logic / Theory:        {cert.logic} (Quantifier-Free Bit-Vectors)")
+    print(f"SMT Solver Latency:    {cert.solver_time_ms:.2f} ms")
+    print(f"Soundness Invariant:   {cert.soundness_explanation}")
+    print("-" * 70)
+
+    if getattr(args, "lean4", False):
+        print("Lean 4 Formal Verification Specification:")
+        print(cert.lean4_code)
+        if args.output:
+            Path(args.output).write_text(cert.lean4_code, encoding="utf-8")
+            print(f"\nSaved Lean 4 Proof: {args.output}")
+    elif getattr(args, "smt2", False):
+        print("SMT-LIB2 Verification Benchmark:")
+        print(cert.smtlib2_code)
+        if args.output:
+            Path(args.output).write_text(cert.smtlib2_code, encoding="utf-8")
+            print(f"\nSaved SMT-LIB2 Benchmark: {args.output}")
+    elif getattr(args, "coq", False):
+        print("Coq Interactive Theorem Prover Script:")
+        print(cert.coq_code)
+        if args.output:
+            Path(args.output).write_text(cert.coq_code, encoding="utf-8")
+            print(f"\nSaved Coq Script: {args.output}")
+    elif args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(cert.to_dict(), f, indent=2)
+        print(f"Saved Complete Proof Certificate: {args.output}")
+
+    print("=" * 70)
+
+
+def cmd_hyperproperties(args):
+    """Formally prove 2-Safety hyperproperties (Constant-Time, SNI, Fault Immunity)."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.hyperproperty_prover import HyperpropertyProver
+    prover = HyperpropertyProver(timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("⚛️  RELATIONAL 2-SAFETY HYPERPROPERTY PROVER")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+
+    run_all = not (args.ct or args.sni or args.fault)
+
+    if run_all or args.ct:
+        rep_ct = prover.prove_constant_time_hyperproperty(ir_text, function_name=target_path.stem)
+        print(f"\n[1] Constant-Time 2-Safety (CT):")
+        print(f"    Status:            {'🟢 PROVED (Self-Composition Bisimilar)' if rep_ct.is_proved else '🔴 TIMING LEAK'}")
+        print(f"    Solving Latency:   {rep_ct.solver_time_ms:.2f} ms")
+        print(f"    Guarantee:         {rep_ct.security_guarantee}")
+
+    if run_all or args.sni:
+        rep_sni = prover.prove_speculative_non_interference(ir_text, function_name=target_path.stem)
+        print(f"\n[2] Speculative Non-Interference (SNI):")
+        print(f"    Status:            {'🟢 PROVED (Cache Footprint Invariant)' if rep_sni.is_proved else '🔴 SPECTRE LEAK'}")
+        print(f"    Solving Latency:   {rep_sni.solver_time_ms:.2f} ms")
+        print(f"    Guarantee:         {rep_sni.security_guarantee}")
+
+    if run_all or args.fault:
+        rep_fii = prover.prove_fault_injection_immunity(ir_text, function_name=target_path.stem)
+        print(f"\n[3] Dual-Rail Fault-Injection Parity Immunity (FII):")
+        print(f"    Status:            {'🟢 PROVED (100% Glitch/Rowhammer Immune)' if rep_fii.is_proved else '🔴 VULNERABLE'}")
+        print(f"    Solving Latency:   {rep_fii.solver_time_ms:.2f} ms")
+        print(f"    Guarantee:         {rep_fii.security_guarantee}")
+
+    print("=" * 70)
+
+
+def cmd_research_eval(args):
+    """Execute scientific benchmark evaluation across compiler security corpus and generate LaTeX tables."""
+    from engine.research_evaluator import ResearchEvaluator
+    evaluator = ResearchEvaluator()
+
+    print("\n" + "=" * 70)
+    print("📊 EMPIRICAL RESEARCH EVALUATOR & SCIENTIFIC BENCHMARK")
+    print("=" * 70)
+    print("Executing SMT solver benchmarks across multi-paradigm test corpus...")
+
+    report = evaluator.run_comprehensive_evaluation()
+
+    print(f"Total Benchmarks:      {report.total_benchmarks_evaluated}")
+    print(f"Confusion Matrix:      TP: {report.true_positives} | TN: {report.true_negatives} | FP: {report.false_positives} | FN: {report.false_negatives}")
+    print(f"Precision:             {report.precision * 100:.1f}%")
+    print(f"Recall:                {report.recall * 100:.1f}%")
+    print(f"F1 Score:              {report.f1_score:.2f}")
+    print(f"Mean SMT Latency:      {report.mean_latency_ms:.2f} ms (StdDev: ±{report.std_dev_latency_ms:.2f} ms)")
+    print(f"P95 SMT Latency:       {report.p95_latency_ms:.2f} ms")
+    print(f"Zero-Divergence Rate:  {report.zero_divergence_success_rate * 100:.1f}%")
+    print("-" * 70)
+
+    for m in report.metrics:
+        print(f"  • {m.category:25} [{m.soundness_status:14}] {m.benchmark_name:26} ({m.smt_solver_latency_ms:.2f} ms)")
+
+    latex_tbl = report.generate_latex_table()
+    if getattr(args, "latex", False):
+        print("\nPublication LaTeX Table:")
+        print(latex_tbl)
+
+    if args.output:
+        out_p = Path(args.output)
+        if out_p.suffix == ".tex":
+            out_p.write_text(latex_tbl, encoding="utf-8")
+        else:
+            with open(out_p, "w", encoding="utf-8") as f:
+                json.dump(report.to_dict(), f, indent=2)
+        print(f"\nSaved Benchmark Report: {args.output}")
+
+    print("=" * 70)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -1369,6 +1529,29 @@ def main():
     watch_p.add_argument("--once", action="store_true", help="Run a single audit scan and exit without continuous daemon loop")
     watch_p.add_argument("--max-iterations", type=int, default=None, help="Optional maximum iterations before stopping daemon")
 
+    # formal-proofs
+    proofs_p = subparsers.add_parser("formal-proofs", help="Export machine-checkable proof certificates (SMT-LIB2, Lean 4, Coq) for Zero-Divergence")
+    proofs_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    proofs_p.add_argument("--transformed", help="Optional transformed LLVM IR file to verify against target")
+    proofs_p.add_argument("--lean4", action="store_true", help="Export Lean 4 interactive theorem prover specification")
+    proofs_p.add_argument("--smt2", action="store_true", help="Export SMT-LIB2 QF_BV solver benchmark")
+    proofs_p.add_argument("--coq", action="store_true", help="Export Coq formal verification script")
+    proofs_p.add_argument("-o", "--output", help="Output file path for generated proof certificate")
+    proofs_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # hyperproperties
+    hyper_p = subparsers.add_parser("hyperproperties", help="Formally prove 2-Safety hyperproperties (Constant-Time, SNI, Fault Immunity)")
+    hyper_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    hyper_p.add_argument("--ct", action="store_true", help="Verify 2-Safety Constant-Time via self-composition")
+    hyper_p.add_argument("--sni", action="store_true", help="Verify Speculative Non-Interference under transient execution")
+    hyper_p.add_argument("--fault", action="store_true", help="Verify Dual-Rail Fault-Injection Parity Immunity")
+    hyper_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # research-eval
+    eval_p = subparsers.add_parser("research-eval", help="Execute scientific benchmark evaluation across compiler security corpus and generate LaTeX tables")
+    eval_p.add_argument("--latex", action="store_true", help="Emit publication-ready LaTeX table for paper submission")
+    eval_p.add_argument("-o", "--output", help="Optional output path for LaTeX table or JSON dossier")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1428,6 +1611,12 @@ def main():
         cmd_fault_resilience(args)
     elif args.command == "watch":
         cmd_watch(args)
+    elif args.command == "formal-proofs":
+        cmd_formal_proofs(args)
+    elif args.command == "hyperproperties":
+        cmd_hyperproperties(args)
+    elif args.command == "research-eval":
+        cmd_research_eval(args)
 
 
 if __name__ == "__main__":

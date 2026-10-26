@@ -588,6 +588,14 @@ class SymbolicIRVerifier:
                     block_order.append(cur_b)
                 seen_b.add(cur_b)
                 continue
+            m_inline_lbl = re.match(r"^([a-zA-Z0-9_.]+):\s*(.+)$", s_ln)
+            if m_inline_lbl:
+                cur_b = m_inline_lbl.group(1).lstrip("%")
+                if cur_b not in block_map:
+                    block_map[cur_b] = []
+                    block_order.append(cur_b)
+                seen_b.add(cur_b)
+                s_ln = m_inline_lbl.group(2).strip()
             block_map[cur_b].append(s_ln)
             if s_ln.startswith("br "):
                 for m_lbl in re.findall(r"label\s+%([\w.]+)", s_ln):
