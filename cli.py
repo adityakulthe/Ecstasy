@@ -438,9 +438,22 @@ def cmd_benchmark(args):
 
 
 def cmd_mcp(args):
-    """Run the Ecstasy FastMCP server over stdio or list registered MCP tools."""
+    """Run the Ecstasy FastMCP server over stdio, list tools, or configure AI IDEs."""
     from server.mcp_server import get_mcp_tools_manifest, mcp
+    from server.agent_integrator import configure_agent_mcp
 
+    if getattr(args, "install_cursor", False):
+        res = configure_agent_mcp(target="cursor", global_install=getattr(args, "global_install", False))
+        print(f"✅ Successfully configured Ecstasy FastMCP for Cursor: {res['path']}")
+        return
+    if getattr(args, "install_claude", False):
+        res = configure_agent_mcp(target="claude")
+        print(f"✅ Successfully configured Ecstasy FastMCP for Claude Desktop: {res['path']}")
+        return
+    if getattr(args, "print_config", False):
+        res = configure_agent_mcp(print_only=True)
+        print(json.dumps(res["config"], indent=2))
+        return
     if getattr(args, "list_tools", False):
         print(json.dumps(get_mcp_tools_manifest(), indent=2))
         return
@@ -449,6 +462,14 @@ def cmd_mcp(args):
     else:
         print("FastMCP is not installed. Registered tools:")
         print(json.dumps(get_mcp_tools_manifest(), indent=2))
+
+
+def cmd_cc(args):
+    """Invoke the Ecstasy drop-in compiler driver."""
+    from engine.compiler_driver import EcstasyCompilerDriver
+    driver_args = getattr(args, "driver_args", [])
+    driver = EcstasyCompilerDriver(is_cxx=False)
+    sys.exit(driver.run(driver_args))
 
 
 def cmd_prove(args):
@@ -1402,8 +1423,16 @@ def main():
     bench_p.add_argument("--report", help="Optional path to export benchmark results as JSON")
 
     # mcp
-    mcp_p = subparsers.add_parser("mcp", help="Launch the FastMCP stdio server or list registered MCP compiler tools")
+    mcp_p = subparsers.add_parser("mcp", help="Launch the FastMCP stdio server, list registered tools, or configure AI IDEs")
     mcp_p.add_argument("--list-tools", action="store_true", help="Print registered MCP tool manifest as JSON")
+    mcp_p.add_argument("--install-cursor", action="store_true", help="1-Click configure Ecstasy FastMCP in Cursor IDE (.cursor/mcp.json)")
+    mcp_p.add_argument("--install-claude", action="store_true", help="1-Click configure Ecstasy FastMCP in Claude Desktop (claude_desktop_config.json)")
+    mcp_p.add_argument("--global", dest="global_install", action="store_true", help="Install globally in user profile")
+    mcp_p.add_argument("--print-config", action="store_true", help="Print MCP server JSON configuration block")
+
+    # cc
+    cc_p = subparsers.add_parser("cc", help="Invoke Ecstasy drop-in Clang compiler driver with SMT Provable Cyber Defense")
+    cc_p.add_argument("driver_args", nargs=argparse.REMAINDER, help="Standard GCC/Clang arguments (e.g. -O2 -c foo.c -o foo.o)")
 
     # doctor
     subparsers.add_parser("doctor", help="Run system and toolchain diagnostic checks")
@@ -1573,6 +1602,8 @@ def main():
         cmd_benchmark(args)
     elif args.command == "mcp":
         cmd_mcp(args)
+    elif args.command == "cc":
+        cmd_cc(args)
     elif args.command == "doctor":
         cmd_doctor(args)
     elif args.command == "demo":

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ecstasy": {
+      "command": "/Users/adityakulthe/Ecstasy/.venv/bin/python",
+      "args": [
+        "/Users/adityakulthe/Ecstasy/server/mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/adityakulthe/Ecstasy",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

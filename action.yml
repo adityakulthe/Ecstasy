@@ -1,0 +1,69 @@
+name: 'Ecstasy Provable Cyber Defense'
+description: 'Formally verifies C/C++/LLVM code against CVEs with Z3 SMT proofs, Zero-Divergence translation validation, and CycloneDX CBOM.'
+author: 'Aditya Kulthe <adityakulthe12@gmail.com>'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  target:
+    description: 'Directory or source file to audit and formally verify'
+    required: false
+    default: '.'
+  fail-on-exploit:
+    description: 'Fail the action workflow if an SMT-proved exploitable vulnerability is found'
+    required: false
+    default: 'true'
+  sarif-output:
+    description: 'Path to export OASIS SARIF v2.1.0 report'
+    required: false
+    default: 'ecstasy-audit.sarif'
+  cbom-output:
+    description: 'Path to export CycloneDX v1.6 Cryptographic Bill of Materials'
+    required: false
+    default: 'ecstasy-cbom.json'
+  pr-comment:
+    description: 'Generate GitHub PR step summary and markdown review'
+    required: false
+    default: 'true'
+
+outputs:
+  verdict:
+    description: 'Audit verdict: PASSED or EXPLOIT_DETECTED'
+    value: ${{ steps.audit.outputs.verdict }}
+  vulnerabilities-count:
+    description: 'Total vulnerabilities found'
+    value: ${{ steps.audit.outputs.vulnerabilities_count }}
+  proved-safe-count:
+    description: 'Total functions proved safe via SMT'
+    value: ${{ steps.audit.outputs.proved_safe_count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install Ecstasy & Dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ${{ github.action_path }}
+    - name: Run Ecstasy SMT Verification
+      id: audit
+      shell: bash
+      run: |
+        FAIL_FLAG=""
+        if [ "${{ inputs.fail-on-exploit }}" = "true" ]; then
+          FAIL_FLAG="--fail-on-exploit"
+        fi
+        COMMENT_FLAG=""
+        if [ "${{ inputs.pr-comment }}" = "true" ]; then
+          COMMENT_FLAG="--pr-comment"
+        fi
+        python3 ${{ github.action_path }}/scripts/github_action_runner.py \
+          --target "${{ inputs.target }}" \
+          --sarif "${{ inputs.sarif-output }}" \
+          --cbom "${{ inputs.cbom-output }}" \
+          $FAIL_FLAG $COMMENT_FLAG

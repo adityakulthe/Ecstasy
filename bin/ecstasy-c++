@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+import sys
+from engine.compiler_driver import main_cxx
+
+if __name__ == "__main__":
+    main_cxx()

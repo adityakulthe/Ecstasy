@@ -32,6 +32,8 @@ dev = [
 
 [project.scripts]
 ecstasy = "cli:main"
+ecstasy-cc = "engine.compiler_driver:main_cc"
+"ecstasy-c++" = "engine.compiler_driver:main_cxx"
 
 [tool.setuptools]
 packages = ["agents", "server", "frontend", "demo", "engine"]

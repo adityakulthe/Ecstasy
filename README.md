@@ -8,11 +8,13 @@
 
 [![AI Compiler Demo - Click to Watch on YouTube](https://img.youtube.com/vi/FictO9BoHnk/maxresdefault.jpg)](https://www.youtube.com/watch?v=FictO9BoHnk)
 
-[![Tests](https://img.shields.io/badge/tests-91/91_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-201/201_passing-success)](tests/)
 [![Engine](https://img.shields.io/badge/formal_verification-Z3_SMT_+_Alive2-brightgreen)](engine/)
+[![Compiler Driver](https://img.shields.io/badge/drop--in_compiler-ecstasy--cc-blue)](engine/compiler_driver.py)
+[![GitHub Action](https://img.shields.io/badge/CI%2FCD-action.yml-2088FF)](action.yml)
 [![Agents](https://img.shields.io/badge/agents-9_Parallel_Roundtable-blueviolet)](agents/)
-[![CLI](https://img.shields.io/badge/cli-ecstasy-blue)](cli.py)
-[![SARIF](https://img.shields.io/badge/security-SARIF_2.1.0_+_CBOM-orange)](server/mcp_server.py)
+[![CLI](https://img.shields.io/badge/cli-ecstasy_30_commands-blue)](cli.py)
+[![MCP](https://img.shields.io/badge/FastMCP-26_Tools-orange)](server/mcp_server.py)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED)](Dockerfile)
 [![CI/CD](https://img.shields.io/badge/CI-GitHub_Actions-2088FF)](.github/workflows/ci.yml)
 
@@ -95,7 +97,40 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Core CLI Commands (`ecstasy` / `python3 cli.py`)
+### 2. Drop-in Clang Replacement (`ecstasy-cc` / `ecstasy-c++`)
+Compile any existing Makefile or CMake codebase transparently with Provable Cyber Defense:
+```bash
+# Build existing project with Make
+export CC=ecstasy-cc CXX=ecstasy-c++
+make
+
+# Or compile directly
+ecstasy-cc -O2 main.c -o app
+```
+
+### 3. 1-Click AI Coding Agent Integration (Cursor & Claude)
+Turn on Ecstasy's 26 formal verification tools inside Cursor IDE or Claude Desktop:
+```bash
+ecstasy mcp --install-cursor
+ecstasy mcp --install-claude
+```
+
+### 4. Turnkey GitHub Actions CI/CD Protection
+Add to `.github/workflows/ecstasy.yml`:
+```yaml
+- name: Run Ecstasy SMT Verification
+  uses: adityakulthe/Ecstasy@main
+  with:
+    target: './src'
+    fail-on-exploit: true
+    pr-comment: true
+```
+
+👉 **For the complete guide, see [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)**.
+
+---
+
+### 5. Core CLI Commands (`ecstasy` / `python3 cli.py`)
 ```bash
 # 1. System & Toolchain Diagnostics (Clang, LLVM Optimizer, Z3, Alive2, Signing Keys)
 ecstasy doctor

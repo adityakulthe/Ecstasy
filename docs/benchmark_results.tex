@@ -7,12 +7,12 @@
 \toprule
 \textbf{Benchmark Category} & \textbf{Target Artifact} & \textbf{LLVM Insts} & \textbf{SMT Latency (ms)} & \textbf{CWEs Detected} & \textbf{ZD Invariant} & \textbf{Soundness} \\
 \midrule
-Memory Safety (CWE-125/787) & \texttt{buffer_overflow} & 6 & 3.86 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
-Arithmetic Fault (CWE-369) & \texttt{integer_divide_zero} & 4 & 0.69 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
+Memory Safety (CWE-125/787) & \texttt{buffer_overflow} & 6 & 3.89 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
+Arithmetic Fault (CWE-369) & \texttt{integer_divide_zero} & 4 & 0.67 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
 Safe Memory Access & \texttt{safe_linear_search} & 3 & 0.04 & 0 & \checkmark & \textsc{TRUE_NEGATIVE} \\
 Side-Channel (CWE-208) & \texttt{crypto_mac_timing_leak} & 6 & 0.13 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
 Constant-Time Crypto & \texttt{constant_time_mux} & 8 & 0.16 & 0 & \checkmark & \textsc{TRUE_NEGATIVE} \\
-Post-Quantum (FIPS 203) & \texttt{ml_kem_kyber_reduction} & 7 & 0.10 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
+Post-Quantum (FIPS 203) & \texttt{ml_kem_kyber_reduction} & 7 & 0.09 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
 Linux Kernel eBPF & \texttt{ebpf_unbounded_packet} & 5 & 0.03 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
 Hardware Fault (CWE-1254) & \texttt{fault_injection_auth_gate} & 6 & 0.08 & 1 & \checkmark & \textsc{TRUE_POSITIVE} \\
 \midrule
