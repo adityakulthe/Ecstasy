@@ -151,3 +151,26 @@ class TestK8sAdmissionWebhook:
         allowed, msg = AdmissionWebhookHandler._validate_workload(pod_spec)
         assert allowed is True
         assert "System namespace" in msg
+
+    @pytest.mark.skipif(
+        not os.environ.get("RUN_LIVE_GCP_TESTS") and not Path.home().joinpath(".config/gcloud").exists(),
+        reason="Google Cloud live credentials not present in environment",
+    )
+    def test_live_gcp_binary_authorization_lifecycle(self):
+        """Live test validating Google Cloud Container Analysis and Binary Authorization API."""
+        import shutil
+        import subprocess
+        if not shutil.which("gcloud"):
+            pytest.skip("gcloud CLI not installed")
+
+        res_auth = subprocess.run(["gcloud", "auth", "print-access-token"], capture_output=True, text=True)
+        if res_auth.returncode != 0:
+            pytest.skip("gcloud not authenticated")
+
+        script_path = Path(__file__).resolve().parent.parent / "scripts" / "test_gcp_live_e2e.py"
+        assert script_path.exists(), "test_gcp_live_e2e.py script not found"
+
+        res = subprocess.run([sys.executable, str(script_path)], capture_output=True, text=True)
+        assert res.returncode == 0, f"Live GCP test failed:\n{res.stdout}\n{res.stderr}"
+        assert "ALL GOOGLE CLOUD BINARY AUTHORIZATION TESTS PASSED WITH 100% SUCCESS" in res.stdout
+
