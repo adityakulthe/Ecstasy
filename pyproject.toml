@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [
-    {name = "Aditya Kulthe", email = "adityakulthe12@gmail.com"}
+    {name = "Aditya Kulthe", email = "kultheaditya23@gmail.com"}
 ]
 dependencies = [
     "python-dotenv>=1.0.0",

@@ -1,6 +1,6 @@
 name: 'Ecstasy Provable Cyber Defense'
 description: 'Formally verifies C/C++/LLVM code against CVEs with Z3 SMT proofs, Zero-Divergence translation validation, and CycloneDX CBOM.'
-author: 'Aditya Kulthe <adityakulthe12@gmail.com>'
+author: 'Aditya Kulthe <kultheaditya23@gmail.com>'
 branding:
   icon: 'shield'
   color: 'blue'

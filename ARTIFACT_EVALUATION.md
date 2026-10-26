@@ -11,7 +11,7 @@ This guide describes how to replicate all experimental results, formal SMT proof
   - ✅ **Artifacts Evaluated — Functional**
   - ✅ **Results Replicated**
 - **Repository**: [https://github.com/adityakulthe/Ecstasy](https://github.com/adityakulthe/Ecstasy)
-- **Primary Contacts**: Aditya Kulthe (`adityakulthe12@gmail.com`)
+- **Primary Contacts**: Aditya Kulthe (`kultheaditya23@gmail.com`)
 - **Key Claims Evaluated**:
   1. **Zero False Positives & Negatives**: 100.0% precision, 100.0% recall, $F_1 = 1.00$ on the vulnerability corpus.
   2. **Microsecond SMT Solving Latency**: Mean solving time $< 1.0$ ms per function with Z3 SMT.

@@ -1,7 +1,7 @@
 # Ecstasy: Verified Compilation and Autonomous Provable Cyber Defense via Multi-Agent SMT Translation Validation
 
 **Aditya Kulthe**  
-*Email: adityakulthe12@gmail.com*  
+*Email: kultheaditya23@gmail.com*  
 *Repository: https://github.com/adityakulthe/Ecstasy*
 
 ---
