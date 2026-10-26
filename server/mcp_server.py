@@ -835,6 +835,18 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_run_self_healing_guard",
             "description": "Execute autonomous closed-loop self-healing remediation on vulnerable files, generating verified git patches and attestations",
         },
+        {
+            "name": "mcp_verify_ebpf_safety",
+            "description": "Formally verify eBPF kernel invariants (packet bounds, 512B stack, bounded loops) and rewrite unsafe bytecode",
+        },
+        {
+            "name": "mcp_synthesize_fault_resilience",
+            "description": "Audit security conditional gates for physical glitching/Rowhammer vulnerabilities and synthesize dual-rail fault-resilience",
+        },
+        {
+            "name": "mcp_watch_repository",
+            "description": "Run autonomous continuous self-healing repository watch daemon to audit, patch, and attest vulnerabilities in real time",
+        },
     ]
 
 
@@ -1185,6 +1197,74 @@ def mcp_run_self_healing_guard(
     guard = SelfHealingGuard(timeout_sec=timeout_sec)
     res = guard.audit_and_heal_file(target_path, auto_patch=auto_patch, output_dir=output_dir)
     return res.to_dict()
+
+
+@_mcp_tool
+def mcp_verify_ebpf_safety(
+    target: str,
+    rewrite: bool = False,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Formally verify eBPF kernel invariants (packet bounds, 512B stack, loop termination) and optionally rewrite unsafe bytecode."""
+    from engine.ebpf_verifier import EBPFVerifier
+
+    verifier = EBPFVerifier(timeout_sec=timeout_sec)
+    if os.path.exists(target):
+        with open(target, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+        target_name = os.path.basename(target)
+    else:
+        code = target
+        target_name = "ebpf_program"
+
+    if rewrite:
+        rep = verifier.verify_and_rewrite_ebpf(code, target_name=target_name)
+    else:
+        rep = verifier.verify_ebpf_safety(code, target_name=target_name)
+    return rep.to_dict()
+
+
+@_mcp_tool
+def mcp_synthesize_fault_resilience(
+    target: str,
+    synthesize: bool = True,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Audit critical conditional gates against glitch/fault injection and synthesize SMT-verified dual-rail complementary register checks."""
+    from engine.fault_resilience import FaultResilienceSynthesizer
+
+    synth = FaultResilienceSynthesizer(timeout_sec=timeout_sec)
+    if os.path.exists(target):
+        with open(target, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+        target_name = os.path.basename(target)
+    else:
+        code = target
+        target_name = "target_program"
+
+    if synthesize:
+        rep = synth.synthesize_fault_resilience(code, target_name=target_name)
+    else:
+        rep = synth.audit_fault_vulnerabilities(code, target_name=target_name)
+    return rep.to_dict()
+
+
+@_mcp_tool
+def mcp_watch_repository(
+    repo_dir: str,
+    single_scan: bool = True,
+    auto_patch: bool = False,
+) -> Dict[str, Any]:
+    """Run autonomous continuous self-healing daemon or single audit scan on a repository to detect and remediate vulnerabilities."""
+    from engine.self_healing_daemon import SelfHealingDaemon
+
+    daemon = SelfHealingDaemon(repo_dir=repo_dir, auto_patch=auto_patch)
+    if single_scan:
+        res = daemon.run_single_scan()
+        return res.to_dict()
+    else:
+        status = daemon.get_status()
+        return status.to_dict()
 
 
 if __name__ == "__main__":

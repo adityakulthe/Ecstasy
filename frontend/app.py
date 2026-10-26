@@ -1390,6 +1390,12 @@ def render_cyber_defense_studio():
         "Speculative Execution Side-Channel: Spectre v1 Bounds Check Bypass (CWE-1037)": (
             "define i32 @spectre_victim(i32 %x, ptr %arr1, ptr %arr2) {\nentry:\n  %cmp = icmp ult i32 %x, 16\n  br i1 %cmp, label %safe, label %err\nsafe:\n  %p1 = getelementptr inbounds i8, ptr %arr1, i32 %x\n  %secret = load i8, ptr %p1\n  %p2 = getelementptr inbounds i8, ptr %arr2, i8 %secret\n  %leak = load i8, ptr %p2\n  ret i32 0\nerr:\n  ret i32 -1\n}"
         ),
+        "Linux Kernel eBPF Packet Filter: Unbounded Access (CWE-125 / BPF Verifier Rejection)": (
+            "define i32 @filter_packet(ptr %ctx) {\nentry:\n  %pkt_ptr = load ptr, ptr %ctx, align 8\n  %val = load i32, ptr %pkt_ptr, align 4\n  %cmp = icmp eq i32 %val, 42\n  br i1 %cmp, label %pass, label %drop\npass:\n  ret i32 1\ndrop:\n  ret i32 2\n}"
+        ),
+        "Hardware Fault Injection & Glitch Bypass: Signature Gate (CWE-1254 / ASIL-D)": (
+            "define i32 @verify_admin_signature(i32 %sig) {\nentry:\n  %is_valid = icmp eq i32 %sig, 31337\n  br i1 %is_valid, label %grant_root, label %deny_root\ngrant_root:\n  ret i32 1\ndeny_root:\n  ret i32 0\n}"
+        ),
     }
 
     selected_cyber_preset = st.selectbox("Load Cybersecurity Preset:", list(CYBER_PRESETS.keys()))
@@ -1432,6 +1438,14 @@ def render_cyber_defense_studio():
         run_lifter = st.button("🔬 Native Binary Lifter & CFG", use_container_width=True)
     with r4_c3:
         run_guard = st.button("🛡️ Autonomous Self-Healing Guard", use_container_width=True)
+
+    r5_c1, r5_c2, r5_c3 = st.columns(3)
+    with r5_c1:
+        run_ebpf = st.button("🐝 eBPF Kernel Verifier & Rewriter", use_container_width=True)
+    with r5_c2:
+        run_fault_resilience = st.button("⚡ Dual-Rail Fault Resilience", use_container_width=True)
+    with r5_c3:
+        run_watch = st.button("👁️ Continuous Watch Self-Healing", use_container_width=True)
 
     if run_exploit_audit:
         with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
@@ -1803,6 +1817,68 @@ def render_cyber_defense_studio():
             finally:
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
+
+    if run_ebpf:
+        with st.spinner("Formally verifying eBPF kernel invariants & synthesizing bounds guards..."):
+            from engine.ebpf_verifier import EBPFVerifier
+            verifier = EBPFVerifier()
+            ebpf_rep = verifier.verify_and_rewrite_ebpf(target_ir)
+            st.divider()
+            st.markdown("### 🐝 eBPF Kernel Safety Verifier & Rewriter Report")
+            eb_c1, eb_c2, eb_c3, eb_c4 = st.columns(4)
+            with eb_c1:
+                st.metric("Kernel Verdict", ebpf_rep.verdict.value)
+            with eb_c2:
+                st.metric("Violations Found", str(len(ebpf_rep.violations)))
+            with eb_c3:
+                st.metric("Patches Injected", str(len(ebpf_rep.patches)))
+            with eb_c4:
+                st.metric("Zero-Divergence", "✅ PROVED" if ebpf_rep.zero_divergence_proved else "❌ NO")
+
+            st.info(ebpf_rep.verification_output)
+            if ebpf_rep.patches:
+                st.markdown("#### 🔧 Rewritten Kernel-Compliant eBPF LLVM IR")
+                st.code(ebpf_rep.rewritten_ir, language="llvm")
+
+    if run_fault_resilience:
+        with st.spinner("Analyzing glitch vulnerabilities & synthesizing dual-rail complementary registers..."):
+            from engine.fault_resilience import FaultResilienceSynthesizer
+            synth = FaultResilienceSynthesizer()
+            fr_rep = synth.synthesize_fault_resilience(target_ir)
+            st.divider()
+            st.markdown("### ⚡ Hardware Fault Injection & Dual-Rail Glitch Resilience Report")
+            fr_c1, fr_c2, fr_c3 = st.columns(3)
+            with fr_c1:
+                st.metric("Fault Immunity Proved", "✅ YES (Z3 SMT)" if fr_rep.fault_immunity_proved else "❌ NO")
+            with fr_c2:
+                st.metric("Hardware Trap", "✅ @llvm.trap" if fr_rep.hardware_trap_proved else "❌ NO")
+            with fr_c3:
+                st.metric("Hardened Gates", str(len(fr_rep.patches)))
+
+            st.success(fr_rep.verification_output)
+            if fr_rep.patches:
+                st.markdown("#### 🛡️ Hardened Dual-Rail LLVM IR")
+                st.code(fr_rep.hardened_ir, language="llvm")
+
+    if run_watch:
+        with st.spinner("Scanning repository for real-time SMT self-healing..."):
+            from engine.self_healing_daemon import SelfHealingDaemon
+            daemon = SelfHealingDaemon(repo_dir=".")
+            status = daemon.run_single_scan()
+            st.divider()
+            st.markdown("### 👁️ Continuous Self-Healing Repository Watch Daemon ('Ecstasy Watch')")
+            w_c1, w_c2, w_c3 = st.columns(3)
+            with w_c1:
+                st.metric("Files Tracked", str(status.files_tracked))
+            with w_c2:
+                st.metric("Events Processed", str(status.events_processed))
+            with w_c3:
+                st.metric("Vulnerabilities Healed", str(status.vulnerabilities_healed_total))
+
+            if status.recent_events:
+                st.markdown("#### Recent Healing Events")
+                for ev in status.recent_events:
+                    st.write(f"- `[{ev.status}]` **{ev.file_path}**: {ev.details}")
 
 
 def main():

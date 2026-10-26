@@ -56,9 +56,14 @@ class AttestationBundleGenerator:
     STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
     PREDICATE_TYPE = "https://ecstasy.dev/attestation/v1"
     PAYLOAD_TYPE = "application/vnd.in-toto+json"
+    DEFAULT_KEY_ID = "ecstasy-vault-ed25519-primary"
 
     def __init__(self, vault: Optional[SafetyVault] = None):
         self.vault = vault or SafetyVault()
+
+    @property
+    def key_id(self) -> str:
+        return self.DEFAULT_KEY_ID
 
     @staticmethod
     def compute_file_digests(file_path: Union[str, Path]) -> Dict[str, str]:

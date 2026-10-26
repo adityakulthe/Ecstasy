@@ -1,0 +1,26 @@
+# ==============================================================================
+# Google Cloud Binary Authorization Policy for Ecstasy PCD
+# Enforces that all container images deployed to GKE clusters MUST have a valid
+# in-toto v1.0 DSSE attestation signed by the Ecstasy Formal Verification Attestor.
+# ==============================================================================
+
+admissionWhitelistPatterns:
+  - namePattern: 'gcr.io/google_containers/*'
+  - namePattern: 'k8s.gcr.io/*'
+  - namePattern: 'gke.gcr.io/*'
+
+defaultAdmissionRule:
+  evaluationMode: REQUIRE_ATTESTATION
+  enforcementMode: ENFORCING_BLOCK_AND_AUDIT_LOG
+  requireAttestationsBy:
+    - 'projects/${PROJECT_ID}/attestors/ecstasy-formal-verification-attestor'
+
+clusterAdmissionRules:
+  # High-Security Production GKE Clusters
+  'us-central1-a.ecstasy-prod-cluster':
+    evaluationMode: REQUIRE_ATTESTATION
+    enforcementMode: ENFORCING_BLOCK_AND_AUDIT_LOG
+    requireAttestationsBy:
+      - 'projects/${PROJECT_ID}/attestors/ecstasy-formal-verification-attestor'
+
+globalPolicyEvaluationMode: ENABLE

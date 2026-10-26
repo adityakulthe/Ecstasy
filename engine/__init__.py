@@ -72,6 +72,25 @@ from .self_healing_guard import (
     HealingAction,
     SelfHealingResult,
 )
+from .ebpf_verifier import (
+    EBPFVerifier,
+    EBPFVerdict,
+    EBPFViolation,
+    EBPFPatch,
+    EBPFReport,
+)
+from .fault_resilience import (
+    FaultResilienceSynthesizer,
+    FaultMechanism,
+    GlitchVulnerability,
+    FaultResiliencePatch,
+    FaultResilienceReport,
+)
+from .self_healing_daemon import (
+    SelfHealingDaemon,
+    DaemonStatus,
+    WatchEvent,
+)
 
 __all__ = [
     "SymbolicIRVerifier",
@@ -114,4 +133,17 @@ __all__ = [
     "SelfHealingGuard",
     "HealingAction",
     "SelfHealingResult",
+    "EBPFVerifier",
+    "EBPFVerdict",
+    "EBPFViolation",
+    "EBPFPatch",
+    "EBPFReport",
+    "FaultResilienceSynthesizer",
+    "FaultMechanism",
+    "GlitchVulnerability",
+    "FaultResiliencePatch",
+    "FaultResilienceReport",
+    "SelfHealingDaemon",
+    "DaemonStatus",
+    "WatchEvent",
 ]

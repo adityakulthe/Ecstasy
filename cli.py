@@ -1046,6 +1046,154 @@ def cmd_guard(args):
     print("=" * 70)
 
 
+def cmd_ebpf(args):
+    """Formally verify eBPF kernel invariants and rewrite unsafe packet/stack operations."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.ebpf_verifier import EBPFVerifier
+    verifier = EBPFVerifier(timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("🐝 ECSTASY eBPF KERNEL SAFETY VERIFIER & REWRITER")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+
+    if getattr(args, "rewrite", False):
+        rep = verifier.verify_and_rewrite_ebpf(ir_text, target_name=target_path.name)
+        print(f"Rewrite Verdict:       {rep.verdict.value}")
+        print(f"Violations Remediated: {len(rep.violations)}")
+        print(f"Kernel Patches:        {len(rep.patches)}")
+        print(f"Zero-Divergence Proved:{'✅ YES' if rep.zero_divergence_proved else '❌ NO'}")
+        print(f"Kernel Compliant:      {'✅ YES (Linux BPF Verifier Safe)' if rep.is_kernel_acceptable else '❌ NO'}")
+        print("-" * 70)
+        for p in rep.patches:
+            print(f"  • 🔧 @{p.function_name}: {p.description}")
+        out_path = Path(args.output) if args.output else target_path.with_suffix(".ebpf_safe.ll")
+        out_path.write_text(rep.rewritten_ir, encoding="utf-8")
+        print(f"Hardened eBPF IR:      {out_path}")
+    else:
+        rep = verifier.verify_ebpf_safety(ir_text, target_name=target_path.name)
+        print(f"Verdict:               {rep.verdict.value}")
+        print(f"Kernel Compliant:      {'🟢 YES (Acceptable)' if rep.is_kernel_acceptable else '🔴 REJECTED BY KERNEL'}")
+        print(f"Violations Found:      {len(rep.violations)}")
+        print(f"Explanation:           {rep.proof_explanation}")
+        print("-" * 70)
+        for v in rep.violations:
+            print(f"  • ⚠️  [{v.violation_type}] @{v.function_name} ({v.cwe_id})")
+            print(f"    Instruction: {v.instruction}")
+            print(f"    Description: {v.description}")
+            print(f"    Remediation: {v.remediation}\n")
+    print("=" * 70)
+
+
+def cmd_fault_resilience(args):
+    """Audit critical security conditional gates against physical glitching/Rowhammer and synthesize dual-rail resilience."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.fault_resilience import FaultResilienceSynthesizer
+    synth = FaultResilienceSynthesizer(timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("⚡ HARDWARE FAULT INJECTION & GLITCH RESILIENCE SYNTHESIZER")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+
+    if getattr(args, "synthesize", False):
+        rep = synth.synthesize_fault_resilience(ir_text, target_name=target_path.name)
+        print(f"Critical Gates Hardened: {len(rep.patches)}")
+        print(f"Zero-Divergence Proved:  {'✅ YES' if rep.zero_divergence_proved else '❌ NO'}")
+        print(f"Fault Immunity Proved:   {'✅ YES (Glitch/Rowhammer Immune)' if rep.fault_immunity_proved else '❌ NO'}")
+        print(f"Hardware Abort Trap:     {'✅ YES (@llvm.trap)' if rep.hardware_trap_proved else '❌ NO'}")
+        print("-" * 70)
+        for p in rep.patches:
+            print(f"  • 🛡️ [{p.hardening_type}] @{p.function_name}: {p.description}")
+        out_path = Path(args.output) if args.output else target_path.with_suffix(".fault_safe.ll")
+        out_path.write_text(rep.hardened_ir, encoding="utf-8")
+        print(f"Fault-Resilient IR:     {out_path}")
+    else:
+        rep = synth.audit_fault_vulnerabilities(ir_text, target_name=target_path.name)
+        print(f"Fault Resilient:       {'🟢 RESILIENT' if rep.is_resilient else '🔴 VULNERABLE TO GLITCH/BITFLIP'}")
+        print(f"Vulnerable Gates:      {len(rep.vulnerabilities)}")
+        print(f"Explanation:           {rep.proof_explanation}")
+        print("-" * 70)
+        for v in rep.vulnerabilities:
+            print(f"  • ⚠️  [{v.cwe_id}] @{v.function_name} (CVSS {v.cvss_score})")
+            print(f"    Instruction: {v.instruction}")
+            print(f"    Description: {v.description}")
+            print(f"    Remediation: {v.remediation}\n")
+    print("=" * 70)
+
+
+def cmd_watch(args):
+    """Run autonomous continuous self-healing repository watch daemon."""
+    repo_path = Path(args.repo)
+    if not repo_path.exists():
+        print(f"❌ Error: Repository directory not found: {repo_path}")
+        sys.exit(1)
+
+    from engine.self_healing_daemon import SelfHealingDaemon
+    daemon = SelfHealingDaemon(
+        repo_dir=str(repo_path),
+        poll_interval=args.poll_interval,
+        auto_patch=args.auto_patch,
+    )
+
+    print("\n" + "=" * 70)
+    print("👁️  AUTONOMOUS CONTINUOUS REPOSITORY SELF-HEALING DAEMON ('ECSTASY WATCH')")
+    print("=" * 70)
+    print(f"Repository:            {repo_path.resolve()}")
+    print(f"Poll Interval:         {args.poll_interval}s")
+    print(f"Auto-Patch:            {'✅ ENABLED' if args.auto_patch else 'ℹ️ AUDIT ONLY'}")
+
+    if getattr(args, "once", False):
+        print("\nRunning single repository scan...")
+        status = daemon.run_single_scan()
+        print(f"Files Tracked:         {status.files_tracked}")
+        print(f"Events Processed:      {status.events_processed}")
+        print(f"Vulnerabilities Healed:{status.vulnerabilities_healed_total}")
+        for ev in status.recent_events:
+            print(f"  • [{ev.status}] {Path(ev.file_path).name}: {ev.details}")
+        print("=" * 70)
+        return
+
+    print("Watching for code changes... Press Ctrl+C to terminate.")
+    print("-" * 70)
+    try:
+        daemon.start_daemon(max_iterations=args.max_iterations)
+    except KeyboardInterrupt:
+        print("\nStopping watch daemon...")
+    finally:
+        status = daemon.get_status()
+        print(f"\nDaemon stopped. Total vulnerabilities healed: {status.vulnerabilities_healed_total}")
+        print("=" * 70)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -1199,6 +1347,28 @@ def main():
     guard_p.add_argument("-o", "--output", help="Output directory for healed files and git diff patches")
     guard_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
 
+    # ebpf
+    ebpf_p = subparsers.add_parser("ebpf", help="Formally verify eBPF kernel invariants and rewrite unsafe bytecode into kernel-safe IR")
+    ebpf_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    ebpf_p.add_argument("--rewrite", action="store_true", help="Rewrite unsafe packet/stack accesses with Linux kernel bounds guards")
+    ebpf_p.add_argument("-o", "--output", help="Output path for rewritten LLVM IR")
+    ebpf_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # fault-resilience
+    fault_p = subparsers.add_parser("fault-resilience", help="Audit critical conditional gates against physical glitching and synthesize dual-rail resilience")
+    fault_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    fault_p.add_argument("--synthesize", action="store_true", help="Synthesize SMT-verified dual-rail complementary register checks")
+    fault_p.add_argument("-o", "--output", help="Output path for fault-resilient LLVM IR")
+    fault_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # watch
+    watch_p = subparsers.add_parser("watch", help="Continuously watch source/IR repository for file edits and run real-time SMT self-healing")
+    watch_p.add_argument("repo", nargs="?", default=".", help="Repository or directory path to watch (default: .)")
+    watch_p.add_argument("--poll-interval", type=float, default=1.0, help="Poll interval in seconds (default: 1.0)")
+    watch_p.add_argument("--auto-patch", action="store_true", help="Automatically generate git patch diffs and commit healed code")
+    watch_p.add_argument("--once", action="store_true", help="Run a single audit scan and exit without continuous daemon loop")
+    watch_p.add_argument("--max-iterations", type=int, default=None, help="Optional maximum iterations before stopping daemon")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1252,6 +1422,12 @@ def main():
         cmd_lift(args)
     elif args.command == "guard":
         cmd_guard(args)
+    elif args.command == "ebpf":
+        cmd_ebpf(args)
+    elif args.command == "fault-resilience":
+        cmd_fault_resilience(args)
+    elif args.command == "watch":
+        cmd_watch(args)
 
 
 if __name__ == "__main__":

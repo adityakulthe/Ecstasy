@@ -103,6 +103,15 @@ jobs:
           # 12. Autonomous Self-Healing CI/CD Gatekeeper ("Ecstasy Guard")
           ecstasy guard demo_corpus/unsafe/buffer_overflow.c
 
+          # 13. eBPF Kernel Safety Verifier & Rewriter
+          ecstasy ebpf tests/fixtures/combined.ll --rewrite -o /tmp/ebpf_safe.ll
+
+          # 14. Hardware Fault Injection & Dual-Rail Glitch Resilience
+          ecstasy fault-resilience tests/fixtures/combined.ll --synthesize -o /tmp/fault_safe.ll
+
+          # 15. Continuous Self-Healing Repository Watcher ("Ecstasy Watch")
+          ecstasy watch demo_corpus/ --once
+
       - name: Upload OASIS SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()

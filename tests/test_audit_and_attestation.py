@@ -910,7 +910,7 @@ entry:
         )
 
         manifest = get_mcp_tools_manifest()
-        assert len(manifest) == 20
+        assert len(manifest) == 23
         names = {t["name"] for t in manifest}
         assert "mcp_compile_to_ir" in names
         assert "mcp_verify_ir_equivalence" in names
@@ -929,6 +929,9 @@ entry:
         assert "mcp_verify_speculative_execution" in names
         assert "mcp_lift_binary_to_ir" in names
         assert "mcp_run_self_healing_guard" in names
+        assert "mcp_verify_ebpf_safety" in names
+        assert "mcp_synthesize_fault_resilience" in names
+        assert "mcp_watch_repository" in names
 
         c_src = "int double_val(int x) { return x + x; }\n"
         comp = mcp_compile_to_ir(c_src)

@@ -1,0 +1,80 @@
+# ==============================================================================
+# Ecstasy Provable Cyber Defense (PCD) - Google Cloud Build Pipeline
+# Continuously builds, formally verifies via Z3 SMT, generates CycloneDX CBOM,
+# instruments hardware memory safety (PAC/MTE), and signs in-toto v1.0 DSSE
+# supply-chain attestations for Google Cloud Binary Authorization.
+# ==============================================================================
+
+steps:
+  # Step 1: Install Python Dependencies & SMT Solver Toolchain
+  - name: 'python:3.11-slim'
+    id: 'setup-and-test'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        apt-get update && apt-get install -y clang llvm z3
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -e .[dev]
+        pytest -q --tb=short
+
+  # Step 2: Provable Cyber Defense (PCD) Audit & Attestation Generation
+  - name: 'python:3.11-slim'
+    id: 'ecstasy-pcd-audit'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install -e .
+        # 1. Full directory audit & SARIF export
+        ecstasy audit demo_corpus/ --sarif /workspace/ecstasy_audit.sarif --report /workspace/ecstasy_audit.json
+
+        # 2. Cryptographic Bill of Materials (CBOM) FIPS/NIST Compliance
+        ecstasy cbom demo_corpus/unsafe/buffer_overflow.c -o /workspace/cbom.cyclonedx.json
+
+        # 3. Kernel eBPF Packet Filter Safety & Bounds Verification
+        ecstasy ebpf tests/fixtures/combined.ll --rewrite -o /workspace/ebpf_hardened.ll
+
+        # 4. Hardware Fault-Injection & Dual-Rail Glitch Hardening
+        ecstasy fault-resilience tests/fixtures/combined.ll --synthesize -o /workspace/fault_hardened.ll
+
+        # 5. in-toto v1.0 DSSE Supply-Chain Attestation
+        ecstasy attest demo_corpus/unsafe/buffer_overflow.c -o /workspace/attestation.dsse.json
+        ecstasy attest --verify /workspace/attestation.dsse.json
+
+  # Step 3: Build Secure Production Container Image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'docker-build'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/ecstasy-pcd:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/ecstasy-pcd:latest'
+      - '.'
+
+  # Step 4: Verify Attestation against Google Cloud Binary Authorization Policy
+  - name: 'python:3.11-slim'
+    id: 'verify-binauthz-admission'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        python deploy/gcp/gcp_gatekeeper.py --verify-attestation /workspace/attestation.dsse.json
+
+images:
+  - 'gcr.io/$PROJECT_ID/ecstasy-pcd:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/ecstasy-pcd:latest'
+
+artifacts:
+  objects:
+    location: 'gs://$PROJECT_ID-ecstasy-attestations/$BUILD_ID'
+    paths:
+      - '/workspace/ecstasy_audit.sarif'
+      - '/workspace/cbom.cyclonedx.json'
+      - '/workspace/attestation.dsse.json'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
