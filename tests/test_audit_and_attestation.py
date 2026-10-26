@@ -776,7 +776,7 @@ entry:
 }
 """
         tree_sup = TreefinementSupervisor(max_depth=2, branch_factor=3)
-        opt_ir = tree_sup._run_opt_pass(unopt_ir, "loop-unroll,slp-vectorizer")
+        opt_ir = tree_sup._run_opt_pass(unopt_ir, "mem2reg,loop-unroll,slp-vectorizer")
         assert "alloca i32" not in opt_ir
 
         simd_ir = """

@@ -230,7 +230,8 @@ Path C: Memory Safety Hardening
                 input_path = f.name
             output_path = input_path.replace('.ll', '_opt.ll')
             if opt_bin:
-                cmd = [opt_bin, f'-passes={passes}']
+                pass_list = f'mem2reg,{passes}' if 'mem2reg' not in passes and not passes.startswith('default') else passes
+                cmd = [opt_bin, f'-passes={pass_list}']
                 if extra_flags:
                     cmd.extend(extra_flags)
                 cmd.extend(['-S', input_path, '-o', output_path])
