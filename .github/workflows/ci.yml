@@ -84,6 +84,16 @@ jobs:
           # 6. MITRE ATT&CK Matrix & Navigator v4.3 Layer
           ecstasy attack-matrix demo_corpus/unsafe/buffer_overflow.c -o /tmp/navigator_layer.json
 
+          # 7. Post-Quantum Cryptography (PQC) Side-Channel Resistance (ML-KEM/Kyber)
+          ecstasy pqc tests/fixtures/combined.ll
+
+          # 8. ARM64 Pointer Authentication (PAC) & Memory Tagging Extension (MTE)
+          ecstasy pac tests/fixtures/combined.ll -o /tmp/pac.ll
+
+          # 9. in-toto v1.0 Cryptographic Supply Chain Attestation & DSSE Envelope
+          ecstasy attest demo_corpus/unsafe/buffer_overflow.c -o /tmp/attestation.json
+          ecstasy attest --verify /tmp/attestation.json
+
       - name: Upload OASIS SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()
@@ -103,4 +113,5 @@ jobs:
             demo_corpus_audit.json
             /tmp/cbom.json
             /tmp/navigator_layer.json
+            /tmp/attestation.json
             coverage.xml
