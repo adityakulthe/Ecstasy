@@ -1314,6 +1314,10 @@ def mcp_verify_hyperproperties(
         res["speculative_non_interference"] = prover.prove_speculative_non_interference(target_ir, function_name=function_name).to_dict()
     if hyperproperty in ("ALL", "FAULT_INJECTION_IMMUNITY"):
         res["fault_injection_immunity"] = prover.prove_fault_injection_immunity(target_ir, function_name=function_name).to_dict()
+    if hyperproperty in ("ALL", "CONTROL_FLOW_INTEGRITY"):
+        res["control_flow_integrity"] = prover.prove_control_flow_integrity(target_ir, function_name=function_name).to_dict()
+    if hyperproperty in ("ALL", "CACHE_LINE_INVARIANCE"):
+        res["cache_line_invariance"] = prover.prove_cache_line_invariance(target_ir, function_name=function_name).to_dict()
     return res
 
 

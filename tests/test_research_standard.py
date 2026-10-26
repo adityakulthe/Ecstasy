@@ -154,6 +154,51 @@ class TestHyperpropertyProver:
         assert rep.is_proved is True
         assert "Immunity against clock/voltage glitching" in rep.security_guarantee
 
+    def test_control_flow_integrity_hyperproperty(self):
+        prover = HyperpropertyProver(timeout_sec=10)
+
+        # Protected indirect call with CFI check
+        protected_ir = """
+        define void @call_fn(ptr %target) {
+        entry:
+            call void @__cfi_check(ptr %target)
+            call void %target()
+            ret void
+        }
+        declare void @__cfi_check(ptr)
+        """
+        rep = prover.prove_control_flow_integrity(protected_ir, function_name="call_fn")
+        assert rep.is_proved is True
+        assert rep.hyperproperty == HyperpropertyType.CONTROL_FLOW_INTEGRITY
+
+        # Unguarded indirect call
+        unguarded_ir = """
+        define void @call_fn(ptr %target) {
+        entry:
+            call void %target()
+            ret void
+        }
+        """
+        rep_un = prover.prove_control_flow_integrity(unguarded_ir, function_name="call_fn")
+        assert rep_un.is_proved is False
+        assert rep_un.counterexample_trace is not None
+
+    def test_cache_line_invariance_hyperproperty(self):
+        prover = HyperpropertyProver(timeout_sec=10)
+
+        # Straight-line branchless code with constant address
+        safe_ir = """
+        define i32 @const_access(i32 %key, ptr %buf) {
+        entry:
+            %p = getelementptr i32, ptr %buf, i32 0
+            %v = load i32, ptr %p
+            ret i32 %v
+        }
+        """
+        rep = prover.prove_cache_line_invariance(safe_ir, function_name="const_access")
+        assert rep.is_proved is True
+        assert rep.hyperproperty == HyperpropertyType.CACHE_LINE_INVARIANCE
+
 
 class TestResearchEvaluator:
     """Tests for empirical evaluation, confusion matrix calculation, and LaTeX table emission."""
@@ -203,6 +248,8 @@ class TestResearchMCPTools:
         assert "constant_time" in res
         assert "speculative_non_interference" in res
         assert "fault_injection_immunity" in res
+        assert "control_flow_integrity" in res
+        assert "cache_line_invariance" in res
 
     def test_mcp_run_research_evaluation_tool(self):
         res = mcp_run_research_evaluation(export_latex=True)

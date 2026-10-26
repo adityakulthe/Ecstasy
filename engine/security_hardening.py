@@ -84,6 +84,9 @@ class SecurityHardener:
                         + hardened_ir[m_fn.end(2) :]
                     )
 
+        if any("@.str.safe_spec" in p.hardened_instruction for p in all_patches) and "@.str.safe_spec" not in hardened_ir:
+            hardened_ir = '@.str.safe_spec = private unnamed_addr constant [3 x i8] c"%s\\00", align 1\n' + hardened_ir
+
         # Formally verify Zero-Divergence Invariant
         zero_divergence_proved = False
         ver_output = "No patches required; code is unchanged."
@@ -194,7 +197,27 @@ class SecurityHardener:
                             )
                             continue
 
-            # 3. Patch CWE-14 / CWE-1037: Sensitive Memory Zeroization Barrier
+            # 3. Patch CWE-134: Uncontrolled Format String
+            m_fmt = re.search(r"\s*(?:%[\w.]+\s*=\s*)?call\s+i32\s+(?:\([^)]*\)\s*)?@(printf|sprintf|fprintf)\((ptr\s+)?(%[\w.]+)", clean)
+            if m_fmt:
+                fn_name = m_fmt.group(1)
+                dyn_fmt_reg = m_fmt.group(3)
+                # Dynamic register passed directly as format string
+                var_counter += 1
+                safe_fmt_code = f'  call i32 (ptr, ...) @{fn_name}(ptr @.str.safe_spec, ptr {dyn_fmt_reg})'
+                new_lines.append(safe_fmt_code)
+                patches.append(
+                    HardeningPatch(
+                        cwe_id="CWE-134",
+                        function_name=fname,
+                        original_instruction=clean,
+                        hardened_instruction=safe_fmt_code,
+                        description=f"Mitigated CWE-134 format string exploit on @{fn_name} by wrapping dynamic variable {dyn_fmt_reg} with literal safe format specifier",
+                    )
+                )
+                continue
+
+            # 4. Patch CWE-14 / CWE-1037: Sensitive Memory Zeroization Barrier
             if clean.startswith("ret "):
                 # Look back to see if previous instructions were zero stores to a pointer
                 has_zero_wipe = any("store i8 0," in prev or "store i32 0," in prev for prev in lines[-4:])

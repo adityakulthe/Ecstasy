@@ -668,6 +668,11 @@ class SymbolicIRVerifier:
                         "@llvm.minimum.",
                         "@llvm.maximum.",
                         "@llvm.copysign.",
+                        "@llvm.memcpy.",
+                        "@llvm.memset.",
+                        "@llvm.memmove.",
+                        "@llvm.trap",
+                        "@llvm.debugtrap",
                     )
                 )
                 or (module_funcs and call_depth < 4 and any(f"@{fn}(" in line for fn in module_funcs))
@@ -810,6 +815,38 @@ class SymbolicIRVerifier:
             # Standalone call instruction without return value (e.g. call void @callee(...))
             clean_call = re.sub(r"^(?:tail|musttail|notail)\s+", "", line)
             if clean_call.startswith("call "):
+                # Handle block memory intrinsics: @llvm.memcpy.*, @llvm.memmove.*
+                m_mcp = re.search(r"@llvm\.(?:memcpy|memmove)\.[a-z0-9.]+\(\s*(?:ptr\s+)?(%[\w.]+),\s*(?:ptr\s+)?(%[\w.]+),\s*i\d+\s+([%0-9]+)", clean_call)
+                if m_mcp:
+                    dst_reg = m_mcp.group(1)
+                    src_reg = m_mcp.group(2)
+                    dst_slot = self._resolve_ptr_slot(dst_reg, env, memory_store)
+                    src_slot = self._resolve_ptr_slot(src_reg, env, memory_store)
+                    if src_slot in memory_store and memory_store[src_slot] is not None:
+                        memory_store[dst_slot] = memory_store[src_slot]
+                    elif src_reg in env:
+                        memory_store[dst_slot] = env[src_reg]
+                    continue
+
+                # Handle block memory fill intrinsic: @llvm.memset.*
+                m_mset = re.search(r"@llvm\.memset\.[a-z0-9.]+\(\s*(?:ptr\s+)?(%[\w.]+),\s*i\d+\s+([%0-9]+),\s*i\d+\s+([%0-9]+)", clean_call)
+                if m_mset:
+                    dst_reg = m_mset.group(1)
+                    val_tok = m_mset.group(2)
+                    dst_slot = self._resolve_ptr_slot(dst_reg, env, memory_store)
+                    if val_tok.startswith("%") and val_tok in env:
+                        fill_val = env[val_tok]
+                    elif val_tok.lstrip("-").isdigit():
+                        fill_val = z3.BitVecVal(int(val_tok), 32)
+                    else:
+                        fill_val = z3.BitVecVal(0, 32)
+                    memory_store[dst_slot] = fill_val
+                    continue
+
+                # Handle trap intrinsics (abort on exploit / unreached path)
+                if "@llvm.trap" in clean_call or "@llvm.debugtrap" in clean_call:
+                    continue
+
                 if not self._inline_callee(
                     clean_call,
                     ret_var=None,

@@ -1307,7 +1307,7 @@ def cmd_hyperproperties(args):
     print("=" * 70)
     print(f"Target:                {target_path.name}")
 
-    run_all = not (args.ct or args.sni or args.fault)
+    run_all = not (args.ct or args.sni or args.fault or getattr(args, "cfi", False) or getattr(args, "cache_line", False))
 
     if run_all or args.ct:
         rep_ct = prover.prove_constant_time_hyperproperty(ir_text, function_name=target_path.stem)
@@ -1329,6 +1329,20 @@ def cmd_hyperproperties(args):
         print(f"    Status:            {'🟢 PROVED (100% Glitch/Rowhammer Immune)' if rep_fii.is_proved else '🔴 VULNERABLE'}")
         print(f"    Solving Latency:   {rep_fii.solver_time_ms:.2f} ms")
         print(f"    Guarantee:         {rep_fii.security_guarantee}")
+
+    if run_all or getattr(args, "cfi", False):
+        rep_cfi = prover.prove_control_flow_integrity(ir_text, function_name=target_path.stem)
+        print(f"\n[4] Forward-Edge Control Flow Integrity (CFI):")
+        print(f"    Status:            {'🟢 PROVED (Target Set Invariant)' if rep_cfi.is_proved else '🔴 UNGUARDED INDIRECT CALL'}")
+        print(f"    Solving Latency:   {rep_cfi.solver_time_ms:.2f} ms")
+        print(f"    Guarantee:         {rep_cfi.security_guarantee}")
+
+    if run_all or getattr(args, "cache_line", False):
+        rep_cache = prover.prove_cache_line_invariance(ir_text, function_name=target_path.stem)
+        print(f"\n[5] Cache-Line Trace Secret-Independence (CT_cache):")
+        print(f"    Status:            {'🟢 PROVED (Cache-Tag Invariant)' if rep_cache.is_proved else '🔴 CACHE-TIMING LEAK'}")
+        print(f"    Solving Latency:   {rep_cache.solver_time_ms:.2f} ms")
+        print(f"    Guarantee:         {rep_cache.security_guarantee}")
 
     print("=" * 70)
 
@@ -1569,11 +1583,13 @@ def main():
     proofs_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
 
     # hyperproperties
-    hyper_p = subparsers.add_parser("hyperproperties", help="Formally prove 2-Safety hyperproperties (Constant-Time, SNI, Fault Immunity)")
+    hyper_p = subparsers.add_parser("hyperproperties", help="Formally prove 2-Safety hyperproperties (Constant-Time, SNI, Fault Immunity, CFI, Cache-Line)")
     hyper_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
     hyper_p.add_argument("--ct", action="store_true", help="Verify 2-Safety Constant-Time via self-composition")
     hyper_p.add_argument("--sni", action="store_true", help="Verify Speculative Non-Interference under transient execution")
     hyper_p.add_argument("--fault", action="store_true", help="Verify Dual-Rail Fault-Injection Parity Immunity")
+    hyper_p.add_argument("--cfi", action="store_true", help="Verify Forward-Edge Control-Flow Integrity Invariance")
+    hyper_p.add_argument("--cache-line", action="store_true", help="Verify Cache-Line Secret-Independence (Flush+Reload immunity)")
     hyper_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
 
     # research-eval

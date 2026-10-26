@@ -1119,6 +1119,14 @@ def render_smt_and_certificate_inspector():
     """, unsafe_allow_html=True)
 
     SMT_PRESETS = {
+        "Block Memory Forwarding (@llvm.memcpy to Register SSA)": (
+            "define i32 @test_memcpy(i32 %val) {\nentry:\n  %src = alloca i32, align 4\n  %dst = alloca i32, align 4\n  store i32 %val, ptr %src, align 4\n  call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %src, i64 4, i1 false)\n  %loaded = load i32, ptr %dst, align 4\n  ret i32 %loaded\n}",
+            "define i32 @test_memcpy(i32 %val) {\nentry:\n  ret i32 %val\n}"
+        ),
+        "Block Memory Zeroization (@llvm.memset to Constant Zero)": (
+            "define i32 @test_memset(i32 %val) {\nentry:\n  %buf = alloca i32, align 4\n  store i32 %val, ptr %buf, align 4\n  call void @llvm.memset.p0.i64(ptr %buf, i8 0, i64 4, i1 false)\n  %loaded = load i32, ptr %buf, align 4\n  ret i32 %loaded\n}",
+            "define i32 @test_memset(i32 %val) {\nentry:\n  ret i32 0\n}"
+        ),
         "Strength Reduction (mul by 2 vs shl 1)": (
             "define i32 @opt(i32 %x) {\n  %1 = mul i32 %x, 2\n  ret i32 %1\n}",
             "define i32 @opt(i32 %x) {\n  %1 = shl i32 %x, 1\n  ret i32 %1\n}"
@@ -1396,6 +1404,12 @@ def render_cyber_defense_studio():
         "Hardware Fault Injection & Glitch Bypass: Signature Gate (CWE-1254 / ASIL-D)": (
             "define i32 @verify_admin_signature(i32 %sig) {\nentry:\n  %is_valid = icmp eq i32 %sig, 31337\n  br i1 %is_valid, label %grant_root, label %deny_root\ngrant_root:\n  ret i32 1\ndeny_root:\n  ret i32 0\n}"
         ),
+        "Control-Flow Integrity Invariance (Indirect Call Whitelisting)": (
+            "define i32 @dispatch_handler(ptr %handler, i32 %val) {\nentry:\n  %res = call i32 %handler(i32 %val)\n  ret i32 %res\n}"
+        ),
+        "Cache-Line Secret Independence (Microarchitectural Cache Invariance)": (
+            "define i32 @secret_cache_access(i32 %sec, ptr %table) {\nentry:\n  %idx = and i32 %sec, 15\n  %ptr = getelementptr inbounds i32, ptr %table, i32 %idx\n  %val = load i32, ptr %ptr, align 4\n  ret i32 %val\n}"
+        ),
     }
 
     selected_cyber_preset = st.selectbox("Load Cybersecurity Preset:", list(CYBER_PRESETS.keys()))
@@ -1446,6 +1460,14 @@ def render_cyber_defense_studio():
         run_fault_resilience = st.button("⚡ Dual-Rail Fault Resilience", use_container_width=True)
     with r5_c3:
         run_watch = st.button("👁️ Continuous Watch Self-Healing", use_container_width=True)
+
+    r6_c1, r6_c2, r6_c3 = st.columns(3)
+    with r6_c1:
+        run_cfi_hyperprop = st.button("🛡️ 2-Safety CFI Invariance (Z3)", use_container_width=True)
+    with r6_c2:
+        run_cache_line_hyperprop = st.button("🧊 Cache-Line Hyperproperty (P×P)", use_container_width=True)
+    with r6_c3:
+        run_full_hyperproperties = st.button("⚖️ All 5 Relational Hyperproperties", use_container_width=True)
 
     if run_exploit_audit:
         with st.spinner("Querying Z3 SMT for reachability & synthesizing exploit payloads..."):
@@ -1879,6 +1901,51 @@ def render_cyber_defense_studio():
                 st.markdown("#### Recent Healing Events")
                 for ev in status.recent_events:
                     st.write(f"- `[{ev.status}]` **{ev.file_path}**: {ev.details}")
+
+    if run_cfi_hyperprop:
+        with st.spinner("Proving 2-Safety Control-Flow Integrity Hyperproperty via Z3 SMT..."):
+            from engine.hyperproperty_prover import prove_control_flow_integrity
+            cfi_res = prove_control_flow_integrity(target_ir)
+            st.divider()
+            st.markdown("### 🛡️ Relational 2-Safety: Control-Flow Integrity (CFI)")
+            if cfi_res.holds:
+                st.success(f"✅ **CFI HYPERPROPERTY PROVED** (Solver time: {cfi_res.solver_time_ms:.2f}ms)")
+            else:
+                st.error(f"❌ **CFI HYPERPROPERTY VIOLATION** (Solver time: {cfi_res.solver_time_ms:.2f}ms)")
+            st.info(cfi_res.proof_details)
+            if cfi_res.counterexample:
+                st.markdown("**Counterexample:**")
+                st.json(cfi_res.counterexample)
+
+    if run_cache_line_hyperprop:
+        with st.spinner("Proving Cache-Line Invariance (P × P self-composition) via Z3 SMT..."):
+            from engine.hyperproperty_prover import prove_cache_line_invariance
+            cl_res = prove_cache_line_invariance(target_ir)
+            st.divider()
+            st.markdown("### 🧊 Relational 2-Safety: Cache-Line Secret Independence")
+            if cl_res.holds:
+                st.success(f"✅ **CACHE-LINE INVARIANCE PROVED** (Solver time: {cl_res.solver_time_ms:.2f}ms)")
+            else:
+                st.error(f"❌ **CACHE-LINE SIDE-CHANNEL LEAK** (Solver time: {cl_res.solver_time_ms:.2f}ms)")
+            st.info(cl_res.proof_details)
+            if cl_res.counterexample:
+                st.markdown("**Counterexample Trace:**")
+                st.json(cl_res.counterexample)
+
+    if run_full_hyperproperties:
+        with st.spinner("Evaluating full suite of 5 Relational 2-Safety Hyperproperties..."):
+            from engine.hyperproperty_prover import RelationalHyperpropertyProver
+            prover = RelationalHyperpropertyProver()
+            all_res = prover.prove_all(target_ir)
+            st.divider()
+            st.markdown("### ⚖️ Full Relational 2-Safety Hyperproperties Suite")
+            for prop_name, res in all_res.items():
+                status_icon = "✅" if res.holds else "❌"
+                with st.expander(f"{status_icon} {prop_name.replace('_', ' ').title()}", expanded=True):
+                    st.markdown(f"**Holds:** `{res.holds}` | **SMT Latency:** `{res.solver_time_ms:.2f}ms`")
+                    st.markdown(res.proof_details)
+                    if res.counterexample:
+                        st.json(res.counterexample)
 
 
 def main():

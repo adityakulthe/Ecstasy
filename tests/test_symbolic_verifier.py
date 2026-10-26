@@ -192,3 +192,47 @@ define i32 @abs_val(i32 %x) {
         report = verify_ir_equivalence(branching_cfg, branchless_select)
         assert report.verdict == VerificationVerdict.PROVED
         assert report.proved is True
+
+    def test_memcpy_symbolic_equivalence(self):
+        """Block memory copy (@llvm.memcpy) is proved equivalent to direct value return."""
+        orig_ir = """
+define i32 @test_copy(i32 %val) {
+entry:
+    %src = alloca i32, align 4
+    %dst = alloca i32, align 4
+    store i32 %val, ptr %src, align 4
+    call void @llvm.memcpy.p0.p0.i64(ptr %dst, ptr %src, i64 4, i1 false)
+    %loaded = load i32, ptr %dst, align 4
+    ret i32 %loaded
+}
+"""
+        opt_ir = """
+define i32 @test_copy(i32 %val) {
+entry:
+    ret i32 %val
+}
+"""
+        report = verify_ir_equivalence(orig_ir, opt_ir)
+        assert report.verdict == VerificationVerdict.PROVED
+        assert report.proved is True
+
+    def test_memset_symbolic_equivalence(self):
+        """Block memory zeroization (@llvm.memset) is proved equivalent to constant zero return."""
+        orig_ir = """
+define i32 @test_zero() {
+entry:
+    %buf = alloca i32, align 4
+    call void @llvm.memset.p0.i64(ptr %buf, i8 0, i64 4, i1 false)
+    %res = load i32, ptr %buf, align 4
+    ret i32 %res
+}
+"""
+        opt_ir = """
+define i32 @test_zero() {
+entry:
+    ret i32 0
+}
+"""
+        report = verify_ir_equivalence(orig_ir, opt_ir)
+        assert report.verdict == VerificationVerdict.PROVED
+        assert report.proved is True
