@@ -9,7 +9,7 @@
 [![Ecstasy Provable Cyber Defense Demo](https://img.youtube.com/vi/FictO9BoHnk/maxresdefault.jpg)](https://www.youtube.com/watch?v=FictO9BoHnk)
 
 [![CI/CD](https://github.com/adityakulthe/Ecstasy/actions/workflows/ci.yml/badge.svg)](https://github.com/adityakulthe/Ecstasy/actions)
-[![Tests](https://img.shields.io/badge/formal_tests-205%2F205_passing-success)](tests/)
+[![Tests](https://img.shields.io/badge/formal_tests-206%2F206_passing-success)](tests/)
 [![Formal SMT Engine](https://img.shields.io/badge/SMT_Refinement-Z3_Bitvectors_+_Alive2-brightgreen)](engine/symbolic_verifier.py)
 [![Hyperproperties](https://img.shields.io/badge/relational_2--safety-P_%C3%97_P_Self--Composition-blueviolet)](engine/hyperproperty_prover.py)
 [![Drop-in Compiler](https://img.shields.io/badge/drop--in_compiler-ecstasy--cc_%26_ecstasy--c%2B%2B-blue)](engine/compiler_driver.py)
@@ -343,7 +343,7 @@ ecstasy doctor
 ```bash
 pytest -v
 ```
-All **205/205 formal tests** pass with a **100% pass rate** in under **12 seconds** with zero cloud or API key dependencies.
+All **206/206 formal tests** pass with a **100% pass rate** in under **12 seconds** with zero cloud or API key dependencies.
 
 ### Reproducing All Scientific Experiments
 ```bash
