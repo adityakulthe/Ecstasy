@@ -1926,6 +1926,273 @@ entry:
         assert "_safe_callee" in res["hardened_ir"]
 
 
+class TestCyberDefenseCLI:
+    """Comprehensive test suite for Ecstasy Provable Cyber Defense (PCD) CLI subcommands."""
+
+    def test_cli_cmd_prove(self, capsys):
+        c_target = Path(__file__).parent.parent / "demo_corpus" / "unsafe" / "buffer_overflow.c"
+
+        with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as f_sarif, \
+             tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f_rep:
+            sarif_path = f_sarif.name
+            rep_path = f_rep.name
+
+        try:
+            class DummyArgs:
+                target = str(c_target)
+                sarif = sarif_path
+                report = rep_path
+                timeout = 15
+
+            cli.cmd_prove(DummyArgs())
+            out = capsys.readouterr().out
+            assert "ECSTASY SMT VULNERABILITY PROVER" in out
+            assert "Security Status:" in out
+            assert os.path.exists(sarif_path)
+            assert os.path.exists(rep_path)
+
+            with open(sarif_path, "r", encoding="utf-8") as f:
+                sarif_data = json.load(f)
+            assert sarif_data["version"] == "2.1.0"
+
+            with open(rep_path, "r", encoding="utf-8") as f:
+                rep_data = json.load(f)
+            assert "functions_analyzed" in rep_data
+            assert rep_data["functions_analyzed"] > 0
+        finally:
+            if os.path.exists(sarif_path):
+                os.unlink(sarif_path)
+            if os.path.exists(rep_path):
+                os.unlink(rep_path)
+
+    def test_cli_cmd_constant_time_and_synthesis(self, capsys):
+        leaking_ir = """
+        define i32 @compare_mac(i32 %key, i32 %input) {
+        entry:
+          %match = icmp eq i32 %key, %input
+          br i1 %match, label %then, label %else
+        then:
+          ret i32 1
+        else:
+          ret i32 0
+        }
+        """
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_in, \
+             tempfile.NamedTemporaryFile(suffix=".ct.ll", delete=False) as f_out:
+            f_in.write(leaking_ir)
+            f_in.flush()
+            in_path = f_in.name
+            out_path = f_out.name
+
+        try:
+            class DummyArgs:
+                target = in_path
+                secrets = "key"
+                synthesize = True
+                output = out_path
+                timeout = 15
+
+            cli.cmd_constant_time(DummyArgs())
+            out = capsys.readouterr().out
+            assert "ECSTASY CRYPTOGRAPHIC CONSTANT-TIME VERIFIER" in out
+            assert "BRANCH_TIMING_LEAK" in out
+            assert "Zero-Divergence Proved: ✅ YES" in out
+            assert os.path.exists(out_path)
+
+            hardened_ir = Path(out_path).read_text(encoding="utf-8")
+            assert "select" in hardened_ir
+            assert "br " not in hardened_ir
+        finally:
+            if os.path.exists(in_path):
+                os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+
+    def test_cli_cmd_harden(self, capsys):
+        div_ir = """
+        define i32 @unprotected_divide(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_in, \
+             tempfile.NamedTemporaryFile(suffix=".hardened.ll", delete=False) as f_out:
+            f_in.write(div_ir)
+            f_in.flush()
+            in_path = f_in.name
+            out_path = f_out.name
+
+        try:
+            class DummyArgs:
+                target = in_path
+                output = out_path
+                timeout = 15
+
+            cli.cmd_harden(DummyArgs())
+            out = capsys.readouterr().out
+            assert "ECSTASY SMT-VERIFIED SECURITY HARDENER" in out
+            assert "Patches Injected:        1" in out
+            assert os.path.exists(out_path)
+
+            hardened = Path(out_path).read_text(encoding="utf-8")
+            assert "_safe_den" in hardened
+            assert "select" in hardened
+        finally:
+            if os.path.exists(in_path):
+                os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+
+    def test_cli_cmd_cbom(self, capsys):
+        with tempfile.NamedTemporaryFile(suffix=".c", delete=False, mode="w") as f_c, \
+             tempfile.NamedTemporaryFile(suffix=".cbom.json", delete=False) as f_out:
+            f_c.write("int crypto_core() { return 42; }\n")
+            f_c.flush()
+            c_path = f_c.name
+            cbom_path = f_out.name
+
+        try:
+            class DummyArgs:
+                target = c_path
+                output = cbom_path
+                project = "CryptoApp"
+
+            cli.cmd_cbom(DummyArgs())
+            out = capsys.readouterr().out
+            assert "CYCLONEDX v1.6 CRYPTOGRAPHIC BILL OF MATERIALS" in out
+            assert "NIST SP 800-218" in out
+            assert os.path.exists(cbom_path)
+
+            with open(cbom_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            assert data["bomFormat"] == "CycloneDX"
+            assert data["specVersion"] == "1.6"
+        finally:
+            if os.path.exists(c_path):
+                os.unlink(c_path)
+            if os.path.exists(cbom_path):
+                os.unlink(cbom_path)
+
+    def test_cli_cmd_fuzz(self, capsys):
+        unhard_ir = """
+        define i32 @unprotected_divide(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        hard_ir = """
+        define i32 @unprotected_divide(i32 %a, i32 %b) {
+        entry:
+          %_div_is_zero = icmp eq i32 %b, 0
+          %_safe_den = select i1 %_div_is_zero, i32 1, i32 %b
+          %res = sdiv i32 %a, %_safe_den
+          ret i32 %res
+        }
+        """
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_u, \
+             tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_h:
+            f_u.write(unhard_ir)
+            f_u.flush()
+            f_h.write(hard_ir)
+            f_h.flush()
+            u_path = f_u.name
+            h_path = f_h.name
+
+        try:
+            class DummyArgs:
+                unhardened = u_path
+                hardened = h_path
+                cwe = "CWE-369"
+                timeout = 5
+
+            cli.cmd_fuzz(DummyArgs())
+            out = capsys.readouterr().out
+            assert "DIFFERENTIAL EXPLOIT POC FUZZER" in out
+            assert "Red-Team Run:" in out
+            assert "Blue-Team Run:" in out
+            assert "SAFE_EXIT_0" in out
+        finally:
+            if os.path.exists(u_path):
+                os.unlink(u_path)
+            if os.path.exists(h_path):
+                os.unlink(h_path)
+
+    def test_cli_cmd_cfi(self, capsys):
+        indirect_ir = """
+        define i32 @dispatch_handler(ptr %handler, i32 %val) {
+        entry:
+          %res = call i32 %handler(i32 %val)
+          ret i32 %res
+        }
+        """
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_in, \
+             tempfile.NamedTemporaryFile(suffix=".cfi.ll", delete=False) as f_out:
+            f_in.write(indirect_ir)
+            f_in.flush()
+            in_path = f_in.name
+            out_path = f_out.name
+
+        try:
+            class DummyArgs:
+                target = in_path
+                output = out_path
+                timeout = 15
+
+            cli.cmd_cfi(DummyArgs())
+            out = capsys.readouterr().out
+            assert "FORWARD-EDGE CONTROL-FLOW INTEGRITY (CFI) ENFORCER" in out
+            assert "CFI Guards Injected:    1" in out
+            assert os.path.exists(out_path)
+
+            cfi_ir = Path(out_path).read_text(encoding="utf-8")
+            assert "_safe_callee" in cfi_ir
+        finally:
+            if os.path.exists(in_path):
+                os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+
+    def test_cli_cmd_attack_matrix(self, capsys):
+        vuln_ir = """
+        define i32 @vuln(i32 %a, i32 %b) {
+        entry:
+          %res = sdiv i32 %a, %b
+          ret i32 %res
+        }
+        """
+        with tempfile.NamedTemporaryFile(suffix=".ll", delete=False, mode="w") as f_in, \
+             tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f_out:
+            f_in.write(vuln_ir)
+            f_in.flush()
+            in_path = f_in.name
+            out_path = f_out.name
+
+        try:
+            class DummyArgs:
+                target = in_path
+                output = out_path
+                timeout = 15
+
+            cli.cmd_attack_matrix(DummyArgs())
+            out = capsys.readouterr().out
+            assert "MITRE ATT&CK ENTERPRISE MATRIX & ATTACK SURFACE" in out
+            assert "Attack Surface Score:" in out
+            assert os.path.exists(out_path)
+
+            with open(out_path, "r", encoding="utf-8") as f:
+                nav = json.load(f)
+            assert nav["domain"] == "enterprise-attack"
+            assert nav["versions"]["navigator"] == "4.3"
+        finally:
+            if os.path.exists(in_path):
+                os.unlink(in_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
+
+
+
 
 
 

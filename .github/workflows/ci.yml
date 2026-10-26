@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   test:
     name: Build & Test (${{ matrix.os }}, Python ${{ matrix.python-version }})
@@ -20,11 +25,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Clang / LLVM
+      - name: Set up Clang, LLVM & Z3 (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm z3
+
+      - name: Set up Clang, LLVM & Z3 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install z3 || true
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -36,17 +46,61 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e .[dev]
 
-      - name: Run Test Suite (Pytest)
+      - name: Run Test Suite with SMT Coverage
         run: |
-          pytest -v
+          pytest -v --tb=short --cov=engine --cov=server --cov=agents --cov-report=xml --cov-report=term
 
-      - name: Verify Ecstasy CLI & Whole-Corpus Benchmark
+      - name: Verify Ecstasy CLI Diagnostics & Tools Manifest
         run: |
           ecstasy --help
           ecstasy doctor
+          ecstasy mcp --list-tools
+
+      - name: Verify Formal Equivalence & Whole-Corpus Benchmark
+        run: |
           ecstasy verify tests/fixtures/ipcp_combined.ll tests/fixtures/ipcp_combined.ll
           ecstasy benchmark demo_corpus
           ecstasy demo midpoint
 
+      - name: Verify Provable Cyber Defense (PCD) Security Pipeline
+        run: |
+          # 1. Audit entire corpus and export OASIS SARIF v2.1.0 report
+          ecstasy audit demo_corpus/ --sarif demo_corpus_audit.sarif --report demo_corpus_audit.json
+
+          # 2. SMT Exploit Prover & Vulnerability Dossier
+          ecstasy prove demo_corpus/unsafe/buffer_overflow.c --sarif cwe_exploit.sarif
+
+          # 3. SMT-Verified Automated Security Hardening
+          ecstasy harden demo_corpus/unsafe/buffer_overflow.c -o /tmp/hardened.ll
+
+          # 4. CycloneDX v1.6 Cryptographic Bill of Materials (CBOM) with NIST SP 800-218 Attestation
+          ecstasy cbom demo_corpus/unsafe/buffer_overflow.c -o /tmp/cbom.json
+
+          # 5. Forward-Edge Control-Flow Integrity (CFI) Enforcement
+          ecstasy cfi tests/fixtures/combined.ll -o /tmp/cfi.ll
+
+          # 6. MITRE ATT&CK Matrix & Navigator v4.3 Layer
+          ecstasy attack-matrix demo_corpus/unsafe/buffer_overflow.c -o /tmp/navigator_layer.json
+
+      - name: Upload OASIS SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()
+        continue-on-error: true
+        with:
+          sarif_file: demo_corpus_audit.sarif
+          category: ecstasy-provable-cyber-defense
+
+      - name: Upload PCD Compliance & Security Artifacts
+        uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()
+        with:
+          name: ecstasy-cyber-defense-artifacts
+          path: |
+            demo_corpus_audit.sarif
+            cwe_exploit.sarif
+            demo_corpus_audit.json
+            /tmp/cbom.json
+            /tmp/navigator_layer.json
+            coverage.xml

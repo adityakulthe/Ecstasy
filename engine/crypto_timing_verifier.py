@@ -133,7 +133,8 @@ class CryptoTimingVerifier:
             if len(tokens) >= 2:
                 pname = tokens[-1]
                 # Check if designated or matches heuristic secret keywords
-                if designated_secrets and pname in designated_secrets:
+                clean_designated = [s.lstrip("%") for s in designated_secrets] if designated_secrets else []
+                if designated_secrets and (pname in designated_secrets or pname.lstrip("%") in clean_designated):
                     tainted_regs.add(pname)
                 elif not designated_secrets:
                     p_lower = pname.lower()

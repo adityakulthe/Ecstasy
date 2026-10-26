@@ -84,5 +84,5 @@ opt_bin
 test-results/
 test-reports/
 
-# Made with Bob
+# Environment variables
 .env

@@ -451,6 +451,298 @@ def cmd_mcp(args):
         print(json.dumps(get_mcp_tools_manifest(), indent=2))
 
 
+def cmd_prove(args):
+    """Formally prove CWE exploitability via Z3 SMT and synthesize triggering payloads."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.smt_vulnerability_prover import audit_ir_security
+    dossier = audit_ir_security(ir_text, timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("⚡ ECSTASY SMT VULNERABILITY PROVER")
+    print("=" * 70)
+    print(f"Target:               {target_path.name}")
+    print(f"Functions Analyzed:   {dossier.functions_analyzed}")
+    status_str = "🟢 DEPLOYABLE (No Provable Exploits)" if dossier.is_deployable else "🔴 VULNERABLE"
+    print(f"Security Status:      {status_str}")
+    print(f"Risk Score:           {dossier.overall_risk_score} / 10.0")
+    print(f"Vulnerabilities:      {len(dossier.vulnerabilities_found)}")
+    print(f"Safety Proofs:        {len(dossier.safety_proofs)}")
+    print("-" * 70)
+
+    if dossier.vulnerabilities_found:
+        print("\n🚨 PROVABLY EXPLOITABLE VULNERABILITIES:")
+        for v in dossier.vulnerabilities_found:
+            print(f"  • [{v.cwe_id}] {v.cwe_name} in @{v.function_name} (CVSS {v.cvss_score})")
+            print(f"    Instruction:     {v.instruction}")
+            if v.exploit_payload:
+                print(f"    Trigger Payload: {json.dumps(v.exploit_payload)}")
+            print(f"    Formal Proof:    {v.proof_explanation}\n")
+
+    if dossier.safety_proofs:
+        print("🛡️ MATHEMATICALLY PROVEN SAFETY INVARIANTS:")
+        for p in dossier.safety_proofs:
+            print(f"  • ✅ {p.cwe_id} in @{p.function_name}: {p.proof_explanation}")
+
+    if getattr(args, "report", None):
+        report_p = Path(args.report)
+        with open(report_p, "w", encoding="utf-8") as f:
+            json.dump(dossier.to_dict(), f, indent=2)
+        print(f"\n📄 Security dossier exported to: {report_p}")
+
+    if getattr(args, "sarif", None):
+        sarif_p = Path(args.sarif)
+        from server.mcp_server import export_sarif_report
+        records = dossier.to_sarif_records()
+        export_sarif_report(records, str(sarif_p))
+        print(f"🛡️ SARIF v2.1.0 report exported to: {sarif_p}")
+    print("=" * 70)
+
+
+def cmd_constant_time(args):
+    """Formally verify cryptographic constant-time side-channel resistance and optionally synthesize branchless code."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.crypto_timing_verifier import verify_crypto_constant_time
+    secrets = [s.strip() for s in args.secrets.split(",")] if getattr(args, "secrets", None) else None
+    report = verify_crypto_constant_time(ir_text, secret_params=secrets, timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("⏱️ ECSTASY CRYPTOGRAPHIC CONSTANT-TIME VERIFIER")
+    print("=" * 70)
+    print(f"Target:               {target_path.name}")
+    print(f"Constant-Time Status: {'🟢 CONSTANT-TIME PROVED' if report.is_constant_time else '🔴 TIMING SIDE-CHANNEL LEAK'}")
+    print(f"Verdict:              {report.verdict.value}")
+    print(f"Violations Count:     {len(report.violations)}")
+    print(f"Explanation:          {report.proof_explanation}")
+    print("-" * 70)
+
+    for v in report.violations:
+        print(f"  • 🚨 {v.leak_type} ({v.cwe_id}) in @{v.function_name}")
+        print(f"    Instruction:      {v.instruction}")
+        print(f"    Tainted Register: {v.tainted_register}")
+        print(f"    Secret Sources:   {', '.join(v.secret_sources)}")
+        print(f"    Remediation:      {v.remediation}\n")
+
+    if getattr(args, "synthesize", False):
+        print("\n✨ Synthesizing SMT-verified branchless constant-time implementation...")
+        from engine.crypto_synthesizer import synthesize_constant_time
+        synth_rep = synthesize_constant_time(ir_text, secret_params=secrets, timeout_sec=args.timeout)
+        print(f"Zero-Divergence Proved: {'✅ YES' if synth_rep.zero_divergence_proved else '❌ NO'}")
+        print(f"Constant-Time Proved:  {'✅ YES' if synth_rep.constant_time_proved else '❌ NO'}")
+        print(f"Patches Injected:      {len(synth_rep.patches)}")
+        out_path = Path(args.output) if args.output else target_path.with_suffix(".ct.ll")
+        out_path.write_text(synth_rep.constant_time_ir, encoding="utf-8")
+        print(f"Saved Constant-Time IR: {out_path}")
+
+    print("=" * 70)
+
+
+def cmd_harden(args):
+    """Apply SMT-verified automated branchless security hardening with Zero-Divergence proof."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.security_hardening import harden_llvm_ir
+    h_rep = harden_llvm_ir(ir_text, timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("🛡️ ECSTASY SMT-VERIFIED SECURITY HARDENER")
+    print("=" * 70)
+    print(f"Target:                  {target_path.name}")
+    print(f"Patches Injected:        {len(h_rep.patches)}")
+    print(f"Zero-Divergence Proved:  {'✅ YES (Z3 SMT Invariant Proved)' if h_rep.zero_divergence_proved else 'ℹ️ N/A'}")
+    print(f"Status:                  {h_rep.verification_output}")
+    print("-" * 70)
+
+    for p in h_rep.patches:
+        print(f"  • 🔧 [{p.cwe_id}] @{p.function_name}: {p.description}")
+        print(f"    Original: {p.original_instruction}")
+        print(f"    Hardened: {p.hardened_instruction}\n")
+
+    out_path = Path(args.output) if args.output else target_path.with_suffix(".hardened.ll")
+    out_path.write_text(h_rep.hardened_ir, encoding="utf-8")
+    print(f"Hardened Output Saved:   {out_path}")
+    print("=" * 70)
+
+
+def cmd_cbom(args):
+    """Generate CycloneDX v1.6 Cryptographic Bill of Materials (CBOM) with NIST SP 800-218 attestation."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        c_source = content
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        llvm_ir = comp["ir"]
+    else:
+        llvm_ir = content
+        c_source = "// LLVM IR source representation"
+
+    out_file = args.output or str(target_path.with_suffix(".cbom.json"))
+    from server.mcp_server import mcp_export_cbom
+    cbom_data = mcp_export_cbom(c_source=c_source, llvm_ir=llvm_ir, project_name=args.project or target_path.stem)
+
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(cbom_data, f, indent=2)
+
+    print("\n" + "=" * 70)
+    print("📜 CYCLONEDX v1.6 CRYPTOGRAPHIC BILL OF MATERIALS (CBOM)")
+    print("=" * 70)
+    print(f"Target:             {target_path.name}")
+    print(f"Format:             {cbom_data['bomFormat']} v{cbom_data['specVersion']}")
+    print(f"Standards:          NIST SP 800-218 (SSDF) / ISO 26262 ASIL-D")
+    att = cbom_data.get("cryptoProperties", {}).get("attestation", {})
+    print(f"Formal SMT Verdict: {att.get('z3_formal_verdict', 'UNKNOWN')}")
+    print(f"Output File:        {out_file}")
+    print("=" * 70)
+
+
+def cmd_fuzz(args):
+    """Differentially execute synthesized SMT exploit PoC harness against unhardened vs hardened binaries."""
+    p_unhard = Path(args.unhardened)
+    p_hard = Path(args.hardened)
+    if not p_unhard.exists() or not p_hard.exists():
+        print(f"❌ Error: Missing files: {p_unhard} or {p_hard}")
+        sys.exit(1)
+
+    unhard_ir = p_unhard.read_text(encoding="utf-8")
+    hard_ir = p_hard.read_text(encoding="utf-8")
+
+    from engine.smt_vulnerability_prover import audit_ir_security
+    from engine.exploit_fuzzer import DifferentialExploitFuzzer
+
+    dossier = audit_ir_security(unhard_ir)
+    if not dossier.vulnerabilities_found:
+        print("ℹ️ Unhardened IR has no provable vulnerabilities to fuzz.")
+        return
+
+    fuzzer = DifferentialExploitFuzzer(timeout_sec=args.timeout)
+    print("\n" + "=" * 70)
+    print("💥 RED-TEAM / BLUE-TEAM DIFFERENTIAL EXPLOIT POC FUZZER")
+    print("=" * 70)
+
+    for vuln in dossier.vulnerabilities_found:
+        if args.cwe and args.cwe.lower() not in vuln.cwe_id.lower():
+            continue
+        rep = fuzzer.verify_exploit(unhard_ir, hard_ir, vuln)
+        print(f"\nTarget Function:   @{rep.function_name} ({rep.cwe_id})")
+        print(f"Red-Team Run:      {rep.unhardened_status} (Unhardened fault: {'✅ YES' if rep.unhardened_crashed else '❌ NO'})")
+        print(f"Blue-Team Run:     {rep.hardened_status} (Hardened survival: {'✅ YES' if rep.hardened_safe else '❌ NO'})")
+        print(f"Exploit Verified:  {'✅ EXPLOIT NEUTRALIZED BY PATCH' if rep.exploit_verified else '⚠️ INCONCLUSIVE'}")
+
+    print("=" * 70)
+
+
+def cmd_cfi(args):
+    """Audit and enforce forward-edge Control-Flow Integrity (CFI) on indirect function calls."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    ir_text = target_path.read_text(encoding="utf-8")
+    from engine.cfi_protector import enforce_control_flow_integrity
+    rep = enforce_control_flow_integrity(ir_text, timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("🛡️ FORWARD-EDGE CONTROL-FLOW INTEGRITY (CFI) ENFORCER")
+    print("=" * 70)
+    print(f"Target:                 {target_path.name}")
+    print(f"Indirect Calls Audited: {len(rep.violations)}")
+    print(f"CFI Guards Injected:    {len(rep.patches)}")
+    print(f"CFI Enforced Proved:    {'✅ YES (ROP/JOP Mitigated)' if rep.cfi_enforced_proved else 'ℹ️ CLEAN'}")
+    print("-" * 70)
+
+    for p in rep.patches:
+        print(f"  • 🛡️ @{p.function_name}: {p.description}")
+
+    out_path = Path(args.output) if args.output else target_path.with_suffix(".cfi.ll")
+    out_path.write_text(rep.hardened_ir, encoding="utf-8")
+    print(f"CFI-Hardened IR Saved:  {out_path}")
+    print("=" * 70)
+
+
+def cmd_attack_matrix(args):
+    """Generate MITRE ATT&CK Enterprise Matrix v15 mapping and ATT&CK Navigator v4.3 JSON layer."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    ir_text = target_path.read_text(encoding="utf-8")
+    from engine.smt_vulnerability_prover import audit_ir_security
+    from engine.crypto_timing_verifier import verify_crypto_constant_time
+    from engine.attack_surface import analyze_attack_surface
+
+    dossier = audit_ir_security(ir_text, timeout_sec=args.timeout)
+    ct_rep = verify_crypto_constant_time(ir_text, timeout_sec=args.timeout)
+    att_rep = analyze_attack_surface(dossier, ct_rep)
+
+    print("\n" + "=" * 70)
+    print("🗺️ MITRE ATT&CK ENTERPRISE MATRIX & ATTACK SURFACE")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+    print(f"Attack Surface Score:  {att_rep.attack_surface_score} / 100.0")
+    print(f"ATT&CK Techniques:     {att_rep.techniques_count}")
+    print(f"Hardening Coverage:    {att_rep.mitigation_coverage_pct}%")
+    print(f"NIST SP 800-218 SSDF:  {'🟢 COMPLIANT' if att_rep.nist_ssdf_compliant else '🔴 NON-COMPLIANT'}")
+    print("-" * 70)
+
+    for t in att_rep.techniques:
+        print(f"  • 🎯 [{t.technique_id}] {t.technique_name} — {t.cwe_id} in @{t.function_name} ({t.tactic})")
+
+    out_file = args.output or str(target_path.with_suffix(".navigator.json"))
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(att_rep.navigator_layer, f, indent=2)
+    print(f"ATT&CK Navigator Layer: {out_file}")
+    print("=" * 70)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -513,6 +805,52 @@ def main():
     ui_p = subparsers.add_parser("ui", help="Launch Streamlit Web IDE")
     ui_p.add_argument("--port", type=int, default=8501, help="Port to bind Streamlit server")
 
+    # prove
+    prove_p = subparsers.add_parser("prove", help="Formally prove CWE vulnerabilities via Z3 SMT and synthesize exploit payloads")
+    prove_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    prove_p.add_argument("--sarif", help="Export OASIS SARIF v2.1.0 report with codeFlows")
+    prove_p.add_argument("--report", help="Export full SMT dossier JSON report")
+    prove_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # constant-time
+    ct_p = subparsers.add_parser("constant-time", help="Formally verify cryptographic constant-time side-channel resistance (CWE-208/385)")
+    ct_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    ct_p.add_argument("--secrets", help="Comma-separated secret parameter names (e.g. key,secret)")
+    ct_p.add_argument("--synthesize", action="store_true", help="Automatically synthesize branchless constant-time straight-line IR")
+    ct_p.add_argument("-o", "--output", help="Output path for synthesized constant-time IR")
+    ct_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # harden
+    harden_p = subparsers.add_parser("harden", help="Apply SMT-verified automated branchless security hardening with Zero-Divergence proof")
+    harden_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    harden_p.add_argument("-o", "--output", help="Output path for hardened LLVM IR")
+    harden_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # cbom
+    cbom_p = subparsers.add_parser("cbom", help="Generate CycloneDX v1.6 Cryptographic Bill of Materials (CBOM) with NIST SP 800-218 attestation")
+    cbom_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    cbom_p.add_argument("-o", "--output", help="Output path for CycloneDX v1.6 CBOM JSON")
+    cbom_p.add_argument("--project", help="Project name for CBOM component metadata")
+
+    # fuzz
+    fuzz_p = subparsers.add_parser("fuzz", help="Differentially execute synthesized SMT exploit PoC harness against unhardened vs hardened binaries")
+    fuzz_p.add_argument("unhardened", help="Path to unhardened LLVM IR (.ll)")
+    fuzz_p.add_argument("hardened", help="Path to hardened LLVM IR (.ll)")
+    fuzz_p.add_argument("--cwe", help="Filter by specific CWE ID (e.g. CWE-369)")
+    fuzz_p.add_argument("--timeout", type=int, default=5, help="Execution timeout in seconds")
+
+    # cfi
+    cfi_p = subparsers.add_parser("cfi", help="Audit and enforce forward-edge Control-Flow Integrity (CFI) on indirect function calls")
+    cfi_p.add_argument("target", help="Path to LLVM IR (.ll)")
+    cfi_p.add_argument("-o", "--output", help="Output path for CFI-hardened LLVM IR")
+    cfi_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # attack-matrix
+    att_p = subparsers.add_parser("attack-matrix", help="Generate MITRE ATT&CK Enterprise Matrix v15 mapping and ATT&CK Navigator v4.3 JSON layer")
+    att_p.add_argument("target", help="Path to LLVM IR (.ll)")
+    att_p.add_argument("-o", "--output", help="Output path for ATT&CK Navigator layer JSON")
+    att_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -540,6 +878,20 @@ def main():
         cmd_demo(args)
     elif args.command == "ui":
         cmd_ui(args)
+    elif args.command == "prove":
+        cmd_prove(args)
+    elif args.command == "constant-time":
+        cmd_constant_time(args)
+    elif args.command == "harden":
+        cmd_harden(args)
+    elif args.command == "cbom":
+        cmd_cbom(args)
+    elif args.command == "fuzz":
+        cmd_fuzz(args)
+    elif args.command == "cfi":
+        cmd_cfi(args)
+    elif args.command == "attack-matrix":
+        cmd_attack_matrix(args)
 
 
 if __name__ == "__main__":
