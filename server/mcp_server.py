@@ -823,6 +823,18 @@ def get_mcp_tools_manifest() -> List[Dict[str, str]]:
             "name": "mcp_generate_attestation_bundle",
             "description": "Generate cryptographically signed in-toto v1.0 and DSSE supply-chain attestation bundle carrying formal Z3 SMT proofs and CBOM",
         },
+        {
+            "name": "mcp_verify_speculative_execution",
+            "description": "Formally audit Spectre v1/v2 speculative leaks, prove Speculative Non-Interference (SNI), and synthesize selective barriers",
+        },
+        {
+            "name": "mcp_lift_binary_to_ir",
+            "description": "Lift stripped native Mach-O or ELF binaries into symbolic LLVM micro-IR and audit ROP gadgets and stack canaries",
+        },
+        {
+            "name": "mcp_run_self_healing_guard",
+            "description": "Execute autonomous closed-loop self-healing remediation on vulnerable files, generating verified git patches and attestations",
+        },
     ]
 
 
@@ -1122,6 +1134,57 @@ def mcp_generate_attestation_bundle(
     )
     return envelope
 
+
+@_mcp_tool
+def mcp_verify_speculative_execution(
+    llvm_ir: str,
+    synthesize_barriers: bool = False,
+    target_arch: str = "arm64",
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Formally audit Spectre v1/v2 speculative leaks, prove Speculative Non-Interference, and synthesize selective barriers."""
+    from engine.speculative_verifier import SpeculativeVerifier
+
+    verifier = SpeculativeVerifier(timeout_sec=timeout_sec)
+    if synthesize_barriers:
+        synth = verifier.synthesize_speculative_barriers(llvm_ir, target_arch=target_arch)
+        return synth.to_dict()
+    else:
+        audit = verifier.audit_speculation_safety(llvm_ir)
+        return audit.to_dict()
+
+
+@_mcp_tool
+def mcp_lift_binary_to_ir(
+    binary_path: str,
+    audit_safety: bool = True,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Lift stripped native Mach-O or ELF binaries into symbolic LLVM micro-IR and audit ROP gadgets and stack canaries."""
+    from engine.binary_lifter import BinaryLifter
+
+    lifter = BinaryLifter(timeout_sec=timeout_sec)
+    lifted = lifter.lift_binary_to_ir(binary_path)
+    res = lifted.to_dict()
+    if audit_safety:
+        audit = lifter.audit_binary_safety(binary_path)
+        res["audit_report"] = audit.to_dict()
+    return res
+
+
+@_mcp_tool
+def mcp_run_self_healing_guard(
+    target_path: str,
+    auto_patch: bool = False,
+    output_dir: Optional[str] = None,
+    timeout_sec: int = 15,
+) -> Dict[str, Any]:
+    """Execute autonomous closed-loop self-healing remediation on vulnerable files, generating verified git patches and attestations."""
+    from engine.self_healing_guard import SelfHealingGuard
+
+    guard = SelfHealingGuard(timeout_sec=timeout_sec)
+    res = guard.audit_and_heal_file(target_path, auto_patch=auto_patch, output_dir=output_dir)
+    return res.to_dict()
 
 
 if __name__ == "__main__":

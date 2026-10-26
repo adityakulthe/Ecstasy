@@ -55,6 +55,23 @@ from .attestation_bundle import (
     AttestationBundleGenerator,
     AttestationVerificationReport,
 )
+from .speculative_verifier import (
+    SpeculativeVerifier,
+    SpectreVariant,
+    SpeculativeAuditReport,
+    SpeculativeSynthesisReport,
+)
+from .binary_lifter import (
+    BinaryLifter,
+    BinaryFormat,
+    LiftedIRModule,
+    BinaryAuditReport,
+)
+from .self_healing_guard import (
+    SelfHealingGuard,
+    HealingAction,
+    SelfHealingResult,
+)
 
 __all__ = [
     "SymbolicIRVerifier",
@@ -86,4 +103,15 @@ __all__ = [
     "HardwareSecurityFeature",
     "AttestationBundleGenerator",
     "AttestationVerificationReport",
+    "SpeculativeVerifier",
+    "SpectreVariant",
+    "SpeculativeAuditReport",
+    "SpeculativeSynthesisReport",
+    "BinaryLifter",
+    "BinaryFormat",
+    "LiftedIRModule",
+    "BinaryAuditReport",
+    "SelfHealingGuard",
+    "HealingAction",
+    "SelfHealingResult",
 ]

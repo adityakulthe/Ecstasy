@@ -94,6 +94,15 @@ jobs:
           ecstasy attest demo_corpus/unsafe/buffer_overflow.c -o /tmp/attestation.json
           ecstasy attest --verify /tmp/attestation.json
 
+          # 10. Speculative Execution & Spectre v1/v2 Side-Channel Defense
+          ecstasy spectre tests/fixtures/combined.ll
+
+          # 11. Zero-Source Native Binary Lifter & CFG Reconstructor
+          ecstasy lift tests/fixtures/combined.ll -o /tmp/lifted.ll || true
+
+          # 12. Autonomous Self-Healing CI/CD Gatekeeper ("Ecstasy Guard")
+          ecstasy guard demo_corpus/unsafe/buffer_overflow.c
+
       - name: Upload OASIS SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11' && always()

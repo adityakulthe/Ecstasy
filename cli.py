@@ -913,6 +913,139 @@ def cmd_attest(args):
     print("=" * 70)
 
 
+def cmd_spectre(args):
+    """Audit and selectively harden against speculative execution side-channel leaks (Spectre v1/v2)."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target file not found: {target_path}")
+        sys.exit(1)
+
+    content = target_path.read_text(encoding="utf-8")
+    if target_path.suffix in (".c", ".cpp"):
+        comp = compile_to_ir(content, filename=target_path.name)
+        if not comp["success"]:
+            print(f"❌ Error compiling C to IR: {comp['error']}")
+            sys.exit(1)
+        ir_text = comp["ir"]
+    else:
+        ir_text = content
+
+    from engine.speculative_verifier import SpeculativeVerifier
+    verifier = SpeculativeVerifier(timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("🔮 SPECULATIVE EXECUTION & SPECTRE FORMAL VERIFIER")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+    print(f"Architecture Target:   {args.arch}")
+
+    if getattr(args, "synthesize", False):
+        synth = verifier.synthesize_speculative_barriers(ir_text, target_arch=args.arch)
+        print(f"Patches Injected:      {len(synth.patches)}")
+        print(f"Zero-Divergence Proved: {'✅ YES' if synth.zero_divergence_proved else '❌ NO'}")
+        print(f"SNI Proved:            {'✅ YES (Speculative Non-Interference)' if synth.sni_proved else '❌ NO'}")
+        print(f"Status:                {synth.verification_output}")
+        print("-" * 70)
+        for p in synth.patches:
+            print(f"  • 🛡️ [{p.barrier_type}] @{p.function_name}: {p.description}")
+        out_path = Path(args.output) if args.output else target_path.with_suffix(".spectre_safe.ll")
+        out_path.write_text(synth.hardened_ir, encoding="utf-8")
+        print(f"Spectre-Hardened IR:   {out_path}")
+    else:
+        audit = verifier.audit_speculation_safety(ir_text)
+        print(f"Speculation Safe:      {'🟢 PROVED IMMUNE' if audit.is_speculation_safe else '🔴 SPECTRE LEAKS DETECTED'}")
+        print(f"SNI Proved:            {'✅ YES' if audit.sni_proved else '❌ NO'}")
+        print(f"Leak Sites Found:      {len(audit.findings)}")
+        print(f"Explanation:           {audit.proof_explanation}")
+        print("-" * 70)
+        for f in audit.findings:
+            print(f"  • ⚠️  [{f.variant}] @{f.function_name} (CVSS {f.cvss_score})")
+            print(f"    Guard:        {f.guard_branch}")
+            print(f"    Description:  {f.description}")
+            print(f"    Remediation:  {f.remediation}\n")
+    print("=" * 70)
+
+
+def cmd_lift(args):
+    """Lift stripped native Mach-O or ELF binaries into symbolic LLVM micro-IR and audit ROP gadgets."""
+    binary_path = Path(args.binary)
+    if not binary_path.exists():
+        print(f"❌ Error: Binary file not found: {binary_path}")
+        sys.exit(1)
+
+    from engine.binary_lifter import BinaryLifter
+    lifter = BinaryLifter(timeout_sec=args.timeout)
+    lifted = lifter.lift_binary_to_ir(str(binary_path))
+
+    print("\n" + "=" * 70)
+    print("🔬 ZERO-SOURCE STRIPPED BINARY LIFTER & CFG RECONSTRUCTOR")
+    print("=" * 70)
+    print(f"Binary:                {binary_path.name}")
+    print(f"Binary Format:         {lifted.binary_format}")
+    print(f"Architecture:          {lifted.architecture}")
+    print(f"Functions Recovered:   {lifted.functions_count}")
+
+    if not getattr(args, "no_audit", False):
+        audit = lifter.audit_binary_safety(str(binary_path))
+        print(f"Security Status:       {'🟢 SECURE' if audit.is_secure else '🔴 RISKS IDENTIFIED'}")
+        print(f"Risk Score:            {audit.risk_score} / 10.0")
+        print(f"ROP Gadgets Discovered:{audit.rop_gadgets_found}")
+        print(f"Stack Canary Coverage: {audit.stack_canary_coverage_pct}%")
+        print(f"PAC Protected Calls:   {audit.pac_protected_calls_pct}%")
+        print("-" * 70)
+        for v in audit.vulnerabilities[:5]:
+            print(f"  • ⚠️  [{v['type']}] ({v['cwe_id']}) at {v['address']}: {v['description']}")
+        if len(audit.vulnerabilities) > 5:
+            print(f"  ... and {len(audit.vulnerabilities) - 5} more finding(s)")
+
+    out_path = Path(args.output) if args.output else binary_path.with_suffix(".lifted.ll")
+    out_path.write_text(lifted.llvm_ir, encoding="utf-8")
+    print(f"Lifted LLVM Micro-IR:  {out_path}")
+    print("=" * 70)
+
+
+def cmd_guard(args):
+    """Autonomous Self-Healing CI/CD Gatekeeper ('Ecstasy Guard')."""
+    target_path = Path(args.target)
+    if not target_path.exists():
+        print(f"❌ Error: Target path not found: {target_path}")
+        sys.exit(1)
+
+    from engine.self_healing_guard import SelfHealingGuard
+    guard = SelfHealingGuard(timeout_sec=args.timeout)
+
+    print("\n" + "=" * 70)
+    print("🛡️ AUTONOMOUS SELF-HEALING CI/CD GATEKEEPER ('ECSTASY GUARD')")
+    print("=" * 70)
+    print(f"Target:                {target_path.name}")
+
+    if target_path.is_file():
+        res = guard.audit_and_heal_file(str(target_path), auto_patch=args.auto_patch, output_dir=args.output)
+        print(f"Remediation Status:    {'🟢 CLEAN' if res.status == 'CLEAN' else '🔧 HEALED'}")
+        print(f"Vulnerabilities Found: {res.original_vulnerabilities_count}")
+        print(f"Patches Applied:       {res.patches_applied_count}")
+        print(f"Zero-Divergence Proved:{'✅ YES (100% Bit-Equivalent)' if res.all_zero_divergence_proved else 'ℹ️ N/A'}")
+        print("-" * 70)
+        for act in res.actions:
+            print(f"  • 🩹 [{act.cwe_id}] @{act.function_name}: {act.description}")
+        if res.git_patch_diff:
+            print("\nGenerated Git Diff Patch:")
+            for d_line in res.git_patch_diff.splitlines()[:15]:
+                print(f"  {d_line}")
+    else:
+        results = guard.audit_and_heal_repository(str(target_path), auto_patch=args.auto_patch)
+        total_vulns = sum(r.original_vulnerabilities_count for r in results)
+        total_healed = sum(r.patches_applied_count for r in results)
+        print(f"Files Scanned:         {len(results)}")
+        print(f"Total Vulnerabilities: {total_vulns}")
+        print(f"Total Patches Injected:{total_healed}")
+        print("=" * 70)
+        for r in results:
+            if r.status == "HEALED":
+                print(f"  • 🔧 {Path(r.target_path).name}: {r.patches_applied_count} vulnerability(s) healed")
+    print("=" * 70)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Ecstasy - Formally Verified AI Compiler Pipeline",
@@ -1044,6 +1177,28 @@ def main():
     attest_p.add_argument("-o", "--output", help="Output path for in-toto attestation bundle JSON")
     attest_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
 
+    # spectre
+    spectre_p = subparsers.add_parser("spectre", help="Formally audit Spectre v1/v2 speculative leaks, prove SNI, and synthesize selective barriers")
+    spectre_p.add_argument("target", help="Path to LLVM IR (.ll) or C source (.c)")
+    spectre_p.add_argument("--synthesize", action="store_true", help="Synthesize selective speculation barriers (@llvm.aarch64.csdb / lfence)")
+    spectre_p.add_argument("--arch", choices=["arm64", "x86"], default="arm64", help="Target CPU architecture for barrier instruction")
+    spectre_p.add_argument("-o", "--output", help="Output path for hardened LLVM IR")
+    spectre_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # lift
+    lift_p = subparsers.add_parser("lift", help="Lift stripped native Mach-O or ELF binaries into symbolic LLVM micro-IR and audit ROP gadgets")
+    lift_p.add_argument("binary", help="Path to stripped native binary executable")
+    lift_p.add_argument("-o", "--output", help="Output path for lifted LLVM micro-IR (.ll)")
+    lift_p.add_argument("--no-audit", action="store_true", help="Skip binary security audit")
+    lift_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
+    # guard
+    guard_p = subparsers.add_parser("guard", help="Autonomous closed-loop self-healing CI/CD gatekeeper and vulnerability remediation daemon")
+    guard_p.add_argument("target", help="Target source file, IR file, or repository directory to heal")
+    guard_p.add_argument("--auto-patch", action="store_true", help="Automatically generate git patch diffs and healed output files")
+    guard_p.add_argument("-o", "--output", help="Output directory for healed files and git diff patches")
+    guard_p.add_argument("--timeout", type=int, default=15, help="SMT solver timeout in seconds")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1091,6 +1246,12 @@ def main():
         cmd_pac(args)
     elif args.command == "attest":
         cmd_attest(args)
+    elif args.command == "spectre":
+        cmd_spectre(args)
+    elif args.command == "lift":
+        cmd_lift(args)
+    elif args.command == "guard":
+        cmd_guard(args)
 
 
 if __name__ == "__main__":
